@@ -14,11 +14,11 @@ class MyApp extends StatelessWidget {
       theme: ThemeData(
         colorScheme: ColorScheme.fromSeed(seedColor: const Color.fromARGB(255, 221, 93, 223)),
         appBarTheme: const AppBarTheme(
-          backgroundColor: Color.fromARGB(255, 221, 93, 223),
+          backgroundColor: Color.fromARGB(255, 250, 250, 250),
         ),
-        scaffoldBackgroundColor: const Color.fromARGB(255, 221, 93, 223)
+        scaffoldBackgroundColor: const Color.fromARGB(255, 255, 255, 255)
       ),
-      home: const MyHomePage(title: 'Daemon'),
+      home: const MyHomePage(title: 'WhatsTheWeather'),
     );
   }
 }

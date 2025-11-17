@@ -37,6 +37,7 @@ dependencies:
   flutter_riverpod: ^2.4.0
   drift_flutter: ^0.2.7
   lottie: ^2.4.0
+  flutter_svg: ^1.1.6
 
 dev_dependencies:
   flutter_test:
