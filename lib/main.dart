@@ -1,5 +1,5 @@
 import 'package:flutter/material.dart';
-import 'package:daemon/pages/home.dart';
+import 'package:daemon/presentation/home.dart';
 
 void main() {
   runApp(const MyApp());
@@ -18,7 +18,7 @@ class MyApp extends StatelessWidget {
         ),
         scaffoldBackgroundColor: const Color.fromARGB(255, 255, 255, 255)
       ),
-      home: const MyHomePage(title: 'WhatsTheWeather'),
+      home: const MyHomePage(title: 'Roadside Assistance'),
     );
   }
 }
