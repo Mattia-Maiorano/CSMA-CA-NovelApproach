@@ -11,7 +11,7 @@ class RSU{
 
     final distance = (p1.x - p2.x) * (p1.x - p2.x) + (p1.y - p2.y) * (p1.y - p2.y);
     if (distance <= range * range) {
-      if (p1.conflictingDirection(p2.xVerse, p2.yVerse)) {
+      if (p1.conflictingDirection(p2.direction)) {
         return true;
       }
     }

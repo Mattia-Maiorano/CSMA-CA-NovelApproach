@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'dart:ffi';
 import 'dart:math';
 import '../domain/entities/car.dart';
 import '../domain/entities/rsu.dart';

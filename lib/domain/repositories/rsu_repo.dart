@@ -1,5 +1,3 @@
-import 'dart:ffi';
-
 import '../entities/rsu.dart';
 import '../entities/car.dart';
 

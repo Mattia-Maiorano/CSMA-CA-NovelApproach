@@ -4,9 +4,8 @@ class Car {
   final String id;
   final int model;
   final Position position;
-  final Direction direction;
 
-  Car({required this.id, required this.model, required this.position, required this.direction});
+  Car({required this.id, required this.model, required this.position});
 
   Position getPosition() {
     return position;
@@ -15,7 +14,7 @@ class Car {
   Car step() {
     Position newPosition;
 
-    switch (direction) {
+    switch (position.direction) {
       case Direction.up:
         newPosition = position.movedBy(0, -1);
         break;
@@ -30,13 +29,13 @@ class Car {
         break;
     }
 
-    return Car(id: id, model: model, position: newPosition, direction: direction);
+    return Car(id: id, model: model, position: newPosition);
   }
 
   Car stop() {
     Position newPosition;
 
-    switch (direction) {
+    switch (position.direction) {
       case Direction.up:
         newPosition = position.movedBy(0, 1);
         break;
@@ -51,6 +50,6 @@ class Car {
         break;
     }
 
-    return Car(id: id, model: model, position: newPosition, direction: direction);
+    return Car(id: id, model: model, position: newPosition);
   }
 }
