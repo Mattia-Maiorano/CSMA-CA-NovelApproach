@@ -1,11 +1,10 @@
+import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/position.dart';
 
-class RSU{
-  final Position position;
-  final int id;
+class RSU extends Entity{
   final int range;
 
-  RSU({required this.position, required this.id, required this.range});
+  RSU({required Position position, required int id, required this.range}) : super(id, position);
 
   bool step(Position p1, Position p2) {
 

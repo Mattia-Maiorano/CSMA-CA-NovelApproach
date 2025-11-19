@@ -1,13 +1,8 @@
-import '../entities/rsu.dart';
 import '../entities/car.dart';
+import '../entities/rsu.dart';
+import 'base_repo.dart';
 
-abstract class RSURepo {
-  Stream<List<RSU>> watchRSUs();
+abstract class RSURepo extends BaseRepo<RSU> {
 
-  Future<void> addRSU(RSU rsu);
-  Future<void> removeRSU(RSU rsu);
-  Future<void> renewRSUs(List<RSU> rsus);
   List<Car> manageCars(List<Car> cars);
-
-  Future<void> dispose();
 }

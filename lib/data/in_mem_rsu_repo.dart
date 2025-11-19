@@ -1,67 +1,40 @@
-import 'dart:async';
 import 'dart:math';
+import 'package:daemon/data/in_mem_repo_base.dart';
+
 import '../domain/entities/car.dart';
 import '../domain/entities/rsu.dart';
 import '../domain/repositories/rsu_repo.dart';
 
-class InMemRsuRepo implements RSURepo {
-  final List<RSU> _rsus = [];
-  final _controller = StreamController<List<RSU>>.broadcast();
-
-  InMemRsuRepo() {
-    _controller.add(List.unmodifiable(_rsus));
-  }
-
-  @override
-  Stream<List<RSU>> watchRSUs() => _controller.stream;
-
-  @override
-  Future<void> addRSU(RSU rsu) async {
-    _rsus.add(rsu);
-    _controller.add(List.unmodifiable(_rsus));
-  }
-
-  @override
-  Future<void> removeRSU(RSU rsu) async {
-    _rsus.remove(rsu);
-    _controller.add(List.unmodifiable(_rsus));
-  }
-
-  @override
-  Future<void> renewRSUs(List<RSU> rsus) async {
-    _rsus
-      ..clear()
-      ..addAll(rsus);
-    _controller.add(List.unmodifiable(_rsus));
-  }
+class InMemRsuRepo extends InMemRepoBase<RSU> implements RSURepo {
 
   @override
   List<Car> manageCars(List<Car> cars) {
-    List<Car> updatedCars = cars;
+    List<Car> updatedCars = cars.toList();
+    Set<(int, int)> stoppedPairs = {};
 
-    int index = 0;
-    for (final rsu in _rsus) {
-      for (final car1 in cars) {
-        for (final car2 in cars) {
-          if (car1.id != car2.id) {
+    Random random = Random();
+
+    for (final rsu in items) {
+      int index1 = 0;
+      for (Car car1 in cars) {
+        int index2 = 0;
+        for (Car car2 in cars) {
+          if (car1.id != car2.id && !stoppedPairs.contains((index1, index2)) && !stoppedPairs.contains((index2, index1))) {
             if (rsu.step(car1.position, car2.position)) {
-              if (Random().nextBool()) {
-                updatedCars[index] = car1.stop();
+              stoppedPairs.add((index1, index2));
+              if (random.nextBool()) {
+                updatedCars[index1] = car1.stop();
               } else {
-                updatedCars[index] = car2.stop();
+                updatedCars[index2] = car2.stop();
               }
             }
           }
+          index2++;
         }
+        index1++;
       }
     }
 
     return updatedCars;
   }
-
-  @override
-  Future<void> dispose() async {
-    await _controller.close();
-  }
-  
 }

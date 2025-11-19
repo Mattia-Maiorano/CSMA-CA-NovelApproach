@@ -1,35 +1,33 @@
 import 'package:daemon/domain/entities/position.dart';
+import 'package:daemon/domain/entities/entity.dart';
 
-class Car {
-  final String id;
+class Car extends Entity {
   final int model;
-  final Position position;
+  final List<List<int>> manhattanGrid;
 
-  Car({required this.id, required this.model, required this.position});
-
-  Position getPosition() {
-    return position;
-  }
+  Car({required int id, required this.model, required Position position, required this.manhattanGrid}) : super(id, position);
 
   Car step() {
-    Position newPosition;
+    Position newPosition = moveForward();
 
-    switch (position.direction) {
-      case Direction.up:
-        newPosition = position.movedBy(0, -1);
-        break;
-      case Direction.down:
-        newPosition = position.movedBy(0, 1);
-        break;
-      case Direction.left:
-        newPosition = position.movedBy(-1, 0);
-        break;
-      case Direction.right:
-        newPosition = position.movedBy(1, 0);
-        break;
+    while(manhattanGrid[newPosition.y][newPosition.x] == 0) {
+        newPosition = moveForward();
     }
 
-    return Car(id: id, model: model, position: newPosition);
+    return Car(id: id, model: model, position: newPosition, manhattanGrid: manhattanGrid);
+  }
+
+  Position moveForward() {
+    switch (position.direction) {
+      case Direction.up:
+        return position.movedBy(0, -1);
+      case Direction.down:
+        return position.movedBy(0, 1);
+      case Direction.left:
+        return position.movedBy(-1, 0);
+      case Direction.right:
+        return position.movedBy(1, 0);
+    }
   }
 
   Car stop() {
@@ -50,6 +48,6 @@ class Car {
         break;
     }
 
-    return Car(id: id, model: model, position: newPosition);
+    return Car(id: id, model: model, position: newPosition, manhattanGrid: manhattanGrid);
   }
 }
