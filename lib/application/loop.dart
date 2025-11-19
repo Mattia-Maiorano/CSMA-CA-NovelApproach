@@ -103,9 +103,12 @@ class Loop {
 
   void tick() {
 
-    List<Car> newCars = cars.map((car) => car.step()).toList();
+    List<Car> newCars;
 
-    newCars = _rsuRepo.manageCars(newCars);
+    for (final Car car in cars) {
+      car.step();
+    }
+    newCars = _rsuRepo.manageCars(cars);
 
     _carRepo.renewItems(newCars);
 

@@ -129,7 +129,6 @@ class _MyHomePageState extends State<MyHomePage> {
   void _start() async {
     
     if (!_started) {
-      print("STARTED");
       setState(() { _started = true; });
 
       _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps);
@@ -204,6 +203,13 @@ class _MyHomePageState extends State<MyHomePage> {
               padding: const EdgeInsets.all(100.0),
               child: Stack(
                 children: [
+                  SizedBox(
+                    width: gridWidth * tileSize,
+                    height: gridHeight * tileSize,
+                    child: CustomPaint(
+                      painter: StaticScenePainter(grid, tileSize),
+                    ),
+                  ),
                   SizedBox(
                     width: gridWidth * tileSize,
                     height: gridHeight * tileSize,

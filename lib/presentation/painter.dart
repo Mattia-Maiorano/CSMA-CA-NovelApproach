@@ -30,6 +30,38 @@ class ScenePainter extends CustomPainter {
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
+
+    for (int i = 0; i < entities.length; i++) {
+      if (entities[i].position != (oldDelegate as ScenePainter).entities[i].position) {
+        return true;
+      }
+    }
+
     return false;
   }
+}
+
+class StaticScenePainter extends CustomPainter {
+  List<List<int>> grid = [];
+  final double tileSize;
+
+  StaticScenePainter(this.grid, this.tileSize);
+
+  @override
+  void paint(Canvas canvas, Size size) {
+    final paint = Paint()..color = Colors.grey.shade300;
+    // draw the static background once (example: grid)
+    for (int y = 0; y < grid.length; y++) {
+      for (int x = 0; x < grid[y].length; x++) {
+        if (grid[y][x] == 0) continue;
+        canvas.drawRect(
+          Rect.fromLTWH(x * tileSize, y * tileSize, tileSize, tileSize),
+          paint,
+        );
+      }
+    }
+  }
+
+  @override
+  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }

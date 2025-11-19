@@ -15,7 +15,6 @@ class InMemRepoBase<T> implements BaseRepo<T> {
 
   @override
   Stream<List<T>> watchItems() {
-    _controller.add(List.unmodifiable(_items));
     return _controller.stream;
   }
 
