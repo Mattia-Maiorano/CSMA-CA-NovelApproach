@@ -103,12 +103,18 @@ class Loop {
 
   void tick() {
 
-    List<Car> newCars;
+    // Work on a mutable snapshot to avoid modifying an unmodifiable list
+    final snapshot = List<Car>.from(cars);
+    final List<Car> updatedCars = [];
 
-    for (final Car car in cars) {
-      car.step();
+    for (int i = 0; i < snapshot.length; i++) {
+      updatedCars.add(snapshot[i].step());
     }
-    newCars = _rsuRepo.manageCars(cars);
+
+    print('Cars positions: ${snapshot.map((car) => '(${car.position.x}, ${car.position.y})').join(', ')}');
+
+    // Allow RSU to manage cars and return a final list for storage
+    final List<Car> newCars = _rsuRepo.manageCars(updatedCars);
 
     _carRepo.renewItems(newCars);
 

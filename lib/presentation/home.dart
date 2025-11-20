@@ -74,6 +74,21 @@ class _MyHomePageState extends State<MyHomePage> {
       final Random rndm = Random();
       List<(int, int)> carPositions = [];
 
+      for (int i = 0; i < 4; i++) {
+        RSU rsu = RSU(
+          id: i + 1,
+          position: Position(
+            x: gridWidth ~/ 5 * (i + 1),
+            y: i % 2 == 0 ? gridHeight ~/ 3 : 2 * gridHeight ~/ 3,
+            direction: Direction.up,
+          ),
+          range: 50,
+        );
+
+        _rsuRepo.addItem(rsu);
+        _entRepo.addItem(rsu);
+      }
+
       // Read RGB values of each pixel
       for (int y = 0; y < image.height; y++) {
         for (int x = 0; x < image.width; x++) {
@@ -81,45 +96,47 @@ class _MyHomePageState extends State<MyHomePage> {
           final pixel = image.getPixel(x, y);
           final r = pixel.r, g = pixel.g, b = pixel.b, a = pixel.a;
           if (r + g + b == 0 && a == 255) {
-
-            _rsuRepo.addItem(RSU(
-              position: Position(x: x, y: y, direction: Direction.up),
-              id: _entRepo.items.length + 1,
-              range: 3,
-            ));
-            _entRepo.addItem(RSU(
-              position: Position(x: x, y: y, direction: Direction.up),
-              id: _entRepo.items.length + 1,
-              range: 3,
-            ));
+            // Black pixel - crossroad
+            grid[y][x] = 5;
           } else if (r + g + b == 765) {
-            // White pixel - road
+            // White pixel - up road
             grid[y][x] = 1;
-            if (rndm.nextDouble() > 0.98 && carPositions.length < 2) {
+          } else if (r == 255 && g == 0 && b == 0) {
+            // Red pixel - right road
+            grid[y][x] = 2;
+          } else if (r == 0 && g == 255 && b == 0) {
+            // Green pixel - down road
+            grid[y][x] = 3;
+          } else if (r == 0 && g == 0 && b == 255) {
+            // Blue pixel - left road
+            grid[y][x] = 4;
+          }
+
+          if (grid[y][x] != 0) {
+            // Valid road cell, consider for car placement
+            if (rndm.nextDouble() > 0.95 && carPositions.length < 2) {
               if (!carPositions.contains((x, y))) {
                 carPositions.add((x, y));
               }
             }
           }
         }
+      }
 
-        for (final pos in carPositions) {
-          final (carX, carY) = pos;
-          final direction = Direction.values[rndm.nextInt(Direction.values.length)];
+      print('length carPositions: ${carPositions.length}');
+      for (final pos in carPositions) {
+        final (carX, carY) = pos;
+        final direction = Direction.values[rndm.nextInt(Direction.values.length)];
 
-          _carRepo.addItem(Car(
-            id: _entRepo.items.length + 1,
-            model: rndm.nextInt(5),
-            position: Position(x: carX, y: carY, direction: direction),
-            manhattanGrid: grid,
-          ));
-          _entRepo.addItem(Car(
-            id: _entRepo.items.length + 1,
-            model: rndm.nextInt(5),
-            position: Position(x: carX, y: carY, direction: direction),
-            manhattanGrid: grid,
-          ));
-        }
+        Car car = Car(
+          id: _entRepo.items.length + 1,
+          model: rndm.nextInt(5),
+          position: Position(x: carX, y: carY, direction: direction),
+          manhattanGrid: grid,
+        );
+
+        _carRepo.addItem(car);
+        _entRepo.addItem(car);
       }
     } catch (e) {
       print("Error in _loadGrid: $e");
@@ -129,11 +146,13 @@ class _MyHomePageState extends State<MyHomePage> {
   void _start() async {
     
     if (!_started) {
+      print("STARTED");
       setState(() { _started = true; });
 
       _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps);
       _loop.start();
     } else {
+      print('STOPPED');
       _loop.stop();
       await _loop.waitForStop();
 

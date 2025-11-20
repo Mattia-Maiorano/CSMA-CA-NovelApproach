@@ -8,11 +8,30 @@ class Car extends Entity {
   Car({required int id, required this.model, required Position position, required this.manhattanGrid}) : super(id, position);
 
   Car step() {
+    print('OLD POS: ${position.x}-${position.y}');
+
+    if (manhattanGrid[position.y][position.x] == 5) {
+      // Crossroad - choose new direction
+      position.direction = position.newDirection();
+    }
+
     Position newPosition = moveForward();
 
-    while(manhattanGrid[newPosition.y][newPosition.x] == 0) {
-        newPosition = moveForward();
+    int maxRetries = 10;
+    while(manhattanGrid[newPosition.y][newPosition.x] == 0 ||
+            (manhattanGrid[newPosition.y][newPosition.x] != position.direction.index + 1 && manhattanGrid[newPosition.y][newPosition.x] != 5)
+    ) {
+      print("RETRY: ${manhattanGrid[newPosition.y][newPosition.x]} vs ${position.direction.index + 1}");
+
+      if (maxRetries-- <= 0) {
+        print("Max retries reached, staying in place.");
+        return Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid);
+      }
+      position.direction = position.newDirection();
+      newPosition = moveForward();
     }
+
+    print('NEW POS: ${newPosition.x}-${newPosition.y}');
 
     return Car(id: id, model: model, position: newPosition, manhattanGrid: manhattanGrid);
   }

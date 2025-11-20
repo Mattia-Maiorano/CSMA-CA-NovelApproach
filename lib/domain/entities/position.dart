@@ -1,13 +1,16 @@
-enum Direction { up, down, left, right }
+import 'dart:math';
+
+enum Direction { up, right, down, left }
 
 class Position {
   final int x;
   final int y;
   final int xVerse;
   final int yVerse;
-  final Direction direction;
+  final Random rndm = Random();
+  Direction direction;
 
-  const Position({required this.x, required this.y, required this.direction})
+  Position({required this.x, required this.y, required this.direction})
       : xVerse = (direction == Direction.right)
             ? 1
             : (direction == Direction.left)
@@ -29,5 +32,10 @@ class Position {
       return true;
     }
     return false;
+  }
+
+  Direction newDirection(){
+    direction = Direction.values[rndm.nextInt(4)];
+    return direction;
   }
 }
