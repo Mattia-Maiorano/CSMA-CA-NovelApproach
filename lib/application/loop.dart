@@ -111,8 +111,6 @@ class Loop {
       updatedCars.add(snapshot[i].step());
     }
 
-    print('Cars positions: ${snapshot.map((car) => '(${car.position.x}, ${car.position.y})').join(', ')}');
-
     // Allow RSU to manage cars and return a final list for storage
     final List<Car> newCars = _rsuRepo.manageCars(updatedCars);
 

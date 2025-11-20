@@ -13,12 +13,16 @@ class ScenePainter extends CustomPainter {
   void paint(Canvas canvas, Size size) {
     final paintCar = Paint()..color = Colors.blue;
     final paintRSU = Paint()..color = Colors.red;
+    final paintRSUrange = Paint()
+      ..color = Colors.red.withOpacity(0.2)
+      ..style = PaintingStyle.fill;
 
     for (final ent in entities) {
       if (ent is RSU) {
         canvas.drawRect(
             Rect.fromLTWH(ent.position.x * tileSize, ent.position.y * tileSize, tileSize, tileSize),
             paintRSU);
+        canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * tileSize, paintRSUrange);
       } else if (ent is Car) {
         canvas.drawCircle(
             Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),

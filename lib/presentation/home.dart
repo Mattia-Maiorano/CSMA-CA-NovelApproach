@@ -74,21 +74,7 @@ class _MyHomePageState extends State<MyHomePage> {
       final Random rndm = Random();
       List<(int, int)> carPositions = [];
 
-      for (int i = 0; i < 4; i++) {
-        RSU rsu = RSU(
-          id: i + 1,
-          position: Position(
-            x: gridWidth ~/ 5 * (i + 1),
-            y: i % 2 == 0 ? gridHeight ~/ 3 : 2 * gridHeight ~/ 3,
-            direction: Direction.up,
-          ),
-          range: 50,
-        );
-
-        _rsuRepo.addItem(rsu);
-        _entRepo.addItem(rsu);
-      }
-
+      int numRSUs = 0;
       // Read RGB values of each pixel
       for (int y = 0; y < image.height; y++) {
         for (int x = 0; x < image.width; x++) {
@@ -110,6 +96,19 @@ class _MyHomePageState extends State<MyHomePage> {
           } else if (r == 0 && g == 0 && b == 255) {
             // Blue pixel - left road
             grid[y][x] = 4;
+          } else if (r == 100 && g == 0 && b == 0) {
+            RSU rsu = RSU(
+            id: numRSUs++,
+            position: Position(
+              x: x,
+              y: y,
+              direction: Direction.up,
+            ),
+            range: 5,
+            );
+
+            _rsuRepo.addItem(rsu);
+            _entRepo.addItem(rsu);
           }
 
           if (grid[y][x] != 0) {
@@ -123,7 +122,6 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       }
 
-      print('length carPositions: ${carPositions.length}');
       for (final pos in carPositions) {
         final (carX, carY) = pos;
         final direction = Direction.values[rndm.nextInt(Direction.values.length)];
