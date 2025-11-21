@@ -35,7 +35,14 @@ class RepoView<T> implements BaseRepo<T> {
     // Replace only the items of this view type inside the master's list.
     final masterList = _master.items.toList();
     masterList.removeWhere(_filter);
-    masterList.addAll(items.cast<dynamic>());
+    // Avoid passing a CastList/Iterable with a different static generic
+    // signature to `addAll`, which can trigger runtime subtype checks
+    // (CastList<Car,dynamic> vs Iterable<Entity<dynamic>>). Append each
+    // item individually so the runtime validates element types instead
+    // of checking the iterable's generic type.
+    for (final it in items) {
+      masterList.add(it as dynamic);
+    }
     await _master.renewItems(masterList);
   }
 

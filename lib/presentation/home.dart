@@ -3,6 +3,7 @@ import 'dart:math';
 
 import 'package:daemon/data/in_mem_repo_base.dart';
 import 'package:daemon/data/repo_view.dart';
+import 'package:daemon/domain/network/network_bitmap.dart';
 import 'package:daemon/domain/repositories/base_repo.dart';
 import 'package:daemon/application/loop.dart';
 import 'package:daemon/domain/entities/car.dart';
@@ -29,6 +30,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   bool _started = false;
+  late final NetworkBitmap _networkBitmap;
   late final BaseRepo<Car> _carRepo;
   late final BaseRepo<RSU> _rsuRepo;
   late final InMemRepoBase<Entity<dynamic>> _entRepo;
@@ -38,8 +40,10 @@ class _MyHomePageState extends State<MyHomePage> {
   final int fps = 60;
   final double tileSize = 20;
   final int range = 5;
-  final int carFrameUpdateInterval = 5;
-  final int rsuFrameUpdateInterval = 5;
+  final int carFrameUpdateInterval = 30;
+  final int rsuFrameUpdateInterval = 30;
+  final int carSensingRange = 3;
+  final int rsuSensingRange = 3;
   int gridWidth = 0;
   int gridHeight = 0;
   List<List<int>> grid = [];
@@ -54,6 +58,7 @@ class _MyHomePageState extends State<MyHomePage> {
     Completer <void> completer = Completer<void>();
 
     completer.complete(_loadGrid());
+    _networkBitmap = NetworkBitmap(gridWidth, gridHeight);
     print("Loading grid...");
   }
 
@@ -110,6 +115,7 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             range: range,
             updateInterval: rsuFrameUpdateInterval,
+            sensingRange: rsuSensingRange,
             );
 
             _rsuRepo.addItem(rsu);
@@ -138,6 +144,7 @@ class _MyHomePageState extends State<MyHomePage> {
           manhattanGrid: grid,
           range: range,
           updateInterval: carFrameUpdateInterval,
+          sensingRange: carSensingRange,
         );
 
         _carRepo.addItem(car);
@@ -155,7 +162,7 @@ class _MyHomePageState extends State<MyHomePage> {
       print("STARTED");
       setState(() { _started = true; });
 
-      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps, carFrameUpdateInterval: carFrameUpdateInterval, rsuFrameUpdateInterval: rsuFrameUpdateInterval);
+      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps, networkBitmap: _networkBitmap);
       _loop.start();
     } else {
       print('STOPPED');

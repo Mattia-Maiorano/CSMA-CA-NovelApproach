@@ -34,10 +34,13 @@ class NetworkBitmap {
       noise += intensity;
     }
 
-    bitmapResidualIntensity[key] = (maxIntensity / noise, maxSignal!.ownerid);
+    bitmapResidualIntensity[key] = (maxIntensity / noise, maxSignal!.ownerId);
   }
 
   void expandSignal(int travelDistance, Signal signal) {
+
+    print('  Expanding signal from owner ${signal.ownerId} to distance $travelDistance');
+
     for (int partialDistance = 0; partialDistance < travelDistance; partialDistance++) {
 
       reserve(signal.x - travelDistance, signal.y - partialDistance, signal);
@@ -55,6 +58,8 @@ class NetworkBitmap {
     reserve(signal.x + travelDistance, signal.y - travelDistance, signal);
     reserve(signal.x + travelDistance, signal.y + travelDistance, signal);
 
+    print('  Removing signal from owner ${signal.ownerId} at distance ${travelDistance - 1}');
+
     int removeDistance = travelDistance - 1;
     for (int partialDistance = 0; partialDistance < removeDistance; partialDistance++) {
       bitmap[(signal.x - removeDistance, signal.y - partialDistance)]?.remove(signal);
@@ -70,6 +75,8 @@ class NetworkBitmap {
     bitmap[(signal.x - removeDistance, signal.y + removeDistance)]?.remove(signal);
     bitmap[(signal.x + removeDistance, signal.y - removeDistance)]?.remove(signal);
     bitmap[(signal.x + removeDistance, signal.y + removeDistance)]?.remove(signal);
+
+    print('  Expansion and removal complete for signal from owner ${signal.ownerId}');
   }
 
   void enqueueSignal(Signal signal) {
@@ -78,10 +85,15 @@ class NetworkBitmap {
 
   void step() {
 
+    print('NetworkBitmap Step Tick $tick');
+
+    // --- CLEAN UP EXPIRED SIGNALS ---
     _signals.removeWhere((signal) => signal.endTick <= tick);
     bitmap.forEach((key, signals) {
       signals.removeWhere((signal) => signal.endTick <= tick);
     });
+
+    print('  Active signals count: ${_signals.length}');
 
     // --- RESERVE ENQUEUED SIGNALS ---
     for (final signal in _enqueuedSignals) {
@@ -90,8 +102,11 @@ class NetworkBitmap {
       }
     }
 
+    print('  Signals after enqueue count: ${_signals.length}');
+
     // --- PROPAGATE SIGNALS ---
-    for (Signal signal in _signals) {
+    List<Signal> signalsCopy = List.from(_signals);
+    for (Signal signal in signalsCopy) {
       int travelDistance = signal.duration - (signal.endTick - tick);
       if (travelDistance <= 0) {
         continue;
@@ -99,17 +114,19 @@ class NetworkBitmap {
       expandSignal(travelDistance, signal);
     }
 
+    print('  Signals after propagation count: ${_signals.length}');
+
     tick++;
   }
 
-  List<Signal> receiveSignalsAt(int x, int y, int sensingRange) {
+  Signal? receiveSignalsAt(int x, int y, int sensingRange, int readerId) {
     if (bitmapResidualIntensity.containsKey((x, y))) {
-      final (intensity, ownerid) = bitmapResidualIntensity[(x, y)]!;
+      final (intensity, ownerId) = bitmapResidualIntensity[(x, y)]!;
       if (intensity > 0.5) {
-        return [Signal(ownerid: ownerid, duration: 5, x: x, y: y, type: SignalType.data)];
+        return bitmap[(x, y)]!.firstWhere((signal) => signal.destinationId == readerId);
       }
     }
-    return [];
+    return null;
   }
 
 }

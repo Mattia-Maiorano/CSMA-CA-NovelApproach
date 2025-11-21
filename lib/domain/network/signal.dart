@@ -11,7 +11,8 @@ enum SignalData {
 }
 
 class Signal {
-  final int ownerid;
+  final int ownerId;
+  final int destinationId;
   final int duration;
   final int x;
   final int y;
@@ -20,7 +21,7 @@ class Signal {
   int startTick = 0;
   int get endTick => startTick + duration;
 
-  Signal({required this.ownerid, required this.duration, required this.x, required this.y, required this.type, this.data});
+  Signal({required this.ownerId, required this.destinationId, required this.duration, required this.x, required this.y, required this.type, this.data});
 
   void setData(SignalData data) {
     this.data = data;

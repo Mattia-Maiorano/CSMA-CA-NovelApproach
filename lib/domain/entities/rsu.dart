@@ -34,7 +34,7 @@ class RSU extends Entity{
     return false;
   }
 
-  List<Car> step(List<Car> cars, int tick, Signal signal) {
+  List<Signal> step(List<Car> cars, int tick, Signal signal) {
     
     final updated = cars.toList();
     final int n = updated.length;
@@ -50,17 +50,20 @@ class RSU extends Entity{
       }
     }
 
+    List<Signal> signals = [];
     for (final pair in conflictPairs) {
       final i = pair[0];
       final j = pair[1];
 
       if (_rng.nextBool()) {
-        updated[j] = updated[j].stop();
+        Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: updateInterval, x: updated[i].position.x, y: updated[i].position.y, type: SignalType.data);
+        signals.add(s);
       } else {
-        updated[i] = updated[i].stop();
+        Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: updateInterval, x: updated[j].position.x, y: updated[j].position.y, type: SignalType.data);
+        signals.add(s);
       }
     }
 
-    return updated;
+    return signals;
   }
 }
