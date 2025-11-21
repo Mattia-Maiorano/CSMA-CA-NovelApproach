@@ -3,13 +3,17 @@ import 'dart:async';
 import 'package:daemon/domain/entities/car.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/rsu.dart';
+import 'package:daemon/domain/network/network_bitmap.dart';
 import 'package:daemon/domain/repositories/base_repo.dart';
 
 class Loop {
-  late final Duration frameDuration;
-  late final BaseRepo<Entity> _entRepo;
-  late final BaseRepo<Car> _carRepo;
-  late final BaseRepo<RSU> _rsuRepo;
+  final Duration frameDuration;
+  final BaseRepo<Entity> _entRepo;
+  final BaseRepo<Car> _carRepo;
+  final BaseRepo<RSU> _rsuRepo;
+  final int _carFrameUpdateInterval;
+  final int _rsuFrameUpdateInterval;
+  final NetworkBitmap _networkBitmap;
   StreamSubscription<List<Car>>? carsSub;
   StreamSubscription<List<RSU>>? rsusSub;
   List<Car> cars = [];
@@ -19,12 +23,14 @@ class Loop {
   Future<void>? _loopFuture;
   Completer<void>? _completer;
 
-  Loop({required BaseRepo<Car> carRepo, required BaseRepo<RSU> rsuRepo, required BaseRepo<Entity> entRepo, required int fps})
-      : _carRepo = carRepo,
+  Loop({required NetworkBitmap networkBitmap, required BaseRepo<Car> carRepo, required BaseRepo<RSU> rsuRepo, required BaseRepo<Entity> entRepo, required int fps, required int carFrameUpdateInterval, required int rsuFrameUpdateInterval})
+      : _networkBitmap = networkBitmap,
+        _carRepo = carRepo,
         _rsuRepo = rsuRepo,
         _entRepo = entRepo,
-        frameDuration = Duration(milliseconds: (1000 / fps).round());
-
+        frameDuration = Duration(milliseconds: (1000 / fps).round()),
+        _carFrameUpdateInterval = carFrameUpdateInterval,
+        _rsuFrameUpdateInterval = rsuFrameUpdateInterval;
   Future<void> start() {
 
     if (_running) {
@@ -104,20 +110,21 @@ class Loop {
 
     // Work on a mutable snapshot to avoid modifying an unmodifiable list
     final snapshot = List<Car>.from(cars);
-    final List<Car> updatedCars = [];
+    List<Car> updatedCars = [];
 
     for (int i = 0; i < snapshot.length; i++) {
-      updatedCars.add(snapshot[i].step());
+      final (updatedCar, signal) = snapshot[i].step(_networkBitmap.tick);
+      updatedCars.add(updatedCar);
+      _networkBitmap.enqueueSignal(signal);
     }
 
-    // Allow each RSU to manage cars (CSMA/CA slot arbitration)
-    var newCars = updatedCars;
     for (final rsu in rsus) {
-      newCars = rsu.manageCars(newCars);
+      Signal signalToRead = _networkBitmap.receiveSignalsAt(rsu.x, rsu.y, rsu.sensingRange);;
+      updatedCars = rsu.step(updatedCars, _networkBitmap.tick, signalToRead);
     }
 
-    _carRepo.renewItems(newCars);
+    _carRepo.renewItems(updatedCars);
 
-    _entRepo.renewItems([...newCars, ...rsus]);
+    _entRepo.renewItems([...updatedCars, ...rsus]);
   }
 }

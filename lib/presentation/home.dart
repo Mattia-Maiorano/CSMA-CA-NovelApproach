@@ -2,6 +2,7 @@ import 'dart:async';
 import 'dart:math';
 
 import 'package:daemon/data/in_mem_repo_base.dart';
+import 'package:daemon/data/repo_view.dart';
 import 'package:daemon/domain/repositories/base_repo.dart';
 import 'package:daemon/application/loop.dart';
 import 'package:daemon/domain/entities/car.dart';
@@ -34,8 +35,11 @@ class _MyHomePageState extends State<MyHomePage> {
   late Loop _loop;
 
   // GAME PARAMETERS
-  final int fps = 2;
+  final int fps = 60;
   final double tileSize = 20;
+  final int range = 5;
+  final int carFrameUpdateInterval = 5;
+  final int rsuFrameUpdateInterval = 5;
   int gridWidth = 0;
   int gridHeight = 0;
   List<List<int>> grid = [];
@@ -43,14 +47,14 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    _carRepo = InMemRepoBase<Car>();
-    _rsuRepo = InMemRepoBase<RSU>();
     _entRepo = InMemRepoBase<Entity<dynamic>>();
+    _carRepo = RepoView<Car>(_entRepo, (e) => e is Car);
+    _rsuRepo = RepoView<RSU>(_entRepo, (e) => e is RSU);
 
     Completer <void> completer = Completer<void>();
 
     completer.complete(_loadGrid());
-    print("LOAD GRID CALLED");
+    print("Loading grid...");
   }
 
   Future<void> _loadGrid() async {
@@ -73,8 +77,9 @@ class _MyHomePageState extends State<MyHomePage> {
       final Random rndm = Random();
       List<(int, int)> carPositions = [];
 
+
+      // --- INSTANTIATE RSUS ---
       int numRSUs = 0;
-      // Read RGB values of each pixel
       for (int y = 0; y < image.height; y++) {
         for (int x = 0; x < image.width; x++) {
 
@@ -103,7 +108,8 @@ class _MyHomePageState extends State<MyHomePage> {
               y: y,
               direction: Direction.up,
             ),
-            range: 5,
+            range: range,
+            updateInterval: rsuFrameUpdateInterval,
             );
 
             _rsuRepo.addItem(rsu);
@@ -111,7 +117,6 @@ class _MyHomePageState extends State<MyHomePage> {
           }
 
           if (grid[y][x] != 0) {
-            // Valid road cell, consider for car placement
             if (rndm.nextDouble() > 0.95 && carPositions.length < 2) {
               if (!carPositions.contains((x, y))) {
                 carPositions.add((x, y));
@@ -121,6 +126,7 @@ class _MyHomePageState extends State<MyHomePage> {
         }
       }
 
+      // --- INSTANTIATE CARS ---
       for (final pos in carPositions) {
         final (carX, carY) = pos;
         final direction = Direction.values[rndm.nextInt(Direction.values.length)];
@@ -130,13 +136,16 @@ class _MyHomePageState extends State<MyHomePage> {
           model: rndm.nextInt(5),
           position: Position(x: carX, y: carY, direction: direction),
           manhattanGrid: grid,
+          range: range,
+          updateInterval: carFrameUpdateInterval,
         );
 
         _carRepo.addItem(car);
         _entRepo.addItem(car);
       }
+      print('Grid loaded: $gridWidth x $gridHeight');
     } catch (e) {
-      print("Error in _loadGrid: $e");
+      print('Error loading grid: $e');
     }
   }
 
@@ -146,7 +155,7 @@ class _MyHomePageState extends State<MyHomePage> {
       print("STARTED");
       setState(() { _started = true; });
 
-      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps);
+      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps, carFrameUpdateInterval: carFrameUpdateInterval, rsuFrameUpdateInterval: rsuFrameUpdateInterval);
       _loop.start();
     } else {
       print('STOPPED');

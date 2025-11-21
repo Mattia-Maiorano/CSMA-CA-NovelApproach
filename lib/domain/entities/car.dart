@@ -1,16 +1,17 @@
 import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/entities/entity.dart';
+import 'package:daemon/domain/network/signal.dart';
 
 class Car extends Entity {
   final int model;
+  final int duration = 5;
   final List<List<int>> manhattanGrid;
 
-  Car({required int id, required this.model, required Position position, required this.manhattanGrid}) : super(id, position);
+  Car({required int id, required this.model, required Position position, required this.manhattanGrid, required int range, required int updateInterval}) : super(id, position, range, updateInterval);
 
-  Car step() {
+  (Car, Signal) step(int tick) {
 
     if (manhattanGrid[position.y][position.x] == 5) {
-      // Crossroad - choose new direction
       position.direction = position.newDirection();
     }
 
@@ -21,16 +22,13 @@ class Car extends Entity {
             (manhattanGrid[newPosition.y][newPosition.x] != position.direction.index + 1 && manhattanGrid[newPosition.y][newPosition.x] != 5)
     ) {
       if (maxRetries-- <= 0) {
-        print("Max retries reached, staying in place.");
-        print("Current position: (${position.x}, ${position.y}) with direction ${position.direction}");
-        print("Intended new position: (${newPosition.x}, ${newPosition.y}), which has grid value ${manhattanGrid[newPosition.y][newPosition.x]}");
-        return Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid);
+        return (Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid, range: range, updateInterval: updateInterval), Signal(ownerid: id, duration: duration, x: position.x, y: position.y, type: SignalType.data));
       }
       position.direction = position.newDirection();
       newPosition = moveForward();
     }
 
-    return Car(id: id, model: model, position: newPosition, manhattanGrid: manhattanGrid);
+    return (Car(id: id, model: model, position: newPosition, manhattanGrid: manhattanGrid, range: range, updateInterval: updateInterval), Signal(ownerid: id, duration: duration, x: newPosition.x, y: newPosition.y, type: SignalType.data));
   }
 
   Position moveForward() {
@@ -64,6 +62,6 @@ class Car extends Entity {
         break;
     }
 
-    return Car(id: id, model: model, position: newPosition, manhattanGrid: manhattanGrid);
+    return Car(id: id, model: model, position: newPosition, manhattanGrid: manhattanGrid, range: range, updateInterval: updateInterval);
   }
 }
