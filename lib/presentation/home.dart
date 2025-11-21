@@ -1,9 +1,8 @@
 import 'dart:async';
 import 'dart:math';
 
-import 'package:daemon/data/in_mem_car_repo.dart';
 import 'package:daemon/data/in_mem_repo_base.dart';
-import 'package:daemon/data/in_mem_rsu_repo.dart';
+import 'package:daemon/domain/repositories/base_repo.dart';
 import 'package:daemon/application/loop.dart';
 import 'package:daemon/domain/entities/car.dart';
 import 'package:daemon/domain/entities/entity.dart';
@@ -29,8 +28,8 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   bool _started = false;
-  late final InMemCarRepo _carRepo;
-  late final InMemRsuRepo _rsuRepo;
+  late final BaseRepo<Car> _carRepo;
+  late final BaseRepo<RSU> _rsuRepo;
   late final InMemRepoBase<Entity<dynamic>> _entRepo;
   late Loop _loop;
 
@@ -44,8 +43,8 @@ class _MyHomePageState extends State<MyHomePage> {
   @override
   void initState() {
     super.initState();
-    _carRepo = InMemCarRepo();
-    _rsuRepo = InMemRsuRepo();
+    _carRepo = InMemRepoBase<Car>();
+    _rsuRepo = InMemRepoBase<RSU>();
     _entRepo = InMemRepoBase<Entity<dynamic>>();
 
     Completer <void> completer = Completer<void>();

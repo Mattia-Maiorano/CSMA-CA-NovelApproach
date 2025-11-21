@@ -4,13 +4,12 @@ import 'package:daemon/domain/entities/car.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/rsu.dart';
 import 'package:daemon/domain/repositories/base_repo.dart';
-import 'package:daemon/domain/repositories/rsu_repo.dart';
 
 class Loop {
   late final Duration frameDuration;
   late final BaseRepo<Entity> _entRepo;
   late final BaseRepo<Car> _carRepo;
-  late final RSURepo _rsuRepo;
+  late final BaseRepo<RSU> _rsuRepo;
   StreamSubscription<List<Car>>? carsSub;
   StreamSubscription<List<RSU>>? rsusSub;
   List<Car> cars = [];
@@ -20,7 +19,7 @@ class Loop {
   Future<void>? _loopFuture;
   Completer<void>? _completer;
 
-  Loop({required BaseRepo<Car> carRepo, required RSURepo rsuRepo, required BaseRepo<Entity> entRepo, required int fps})
+  Loop({required BaseRepo<Car> carRepo, required BaseRepo<RSU> rsuRepo, required BaseRepo<Entity> entRepo, required int fps})
       : _carRepo = carRepo,
         _rsuRepo = rsuRepo,
         _entRepo = entRepo,
@@ -111,8 +110,11 @@ class Loop {
       updatedCars.add(snapshot[i].step());
     }
 
-    // Allow RSU to manage cars and return a final list for storage
-    final List<Car> newCars = _rsuRepo.manageCars(updatedCars);
+    // Allow each RSU to manage cars (CSMA/CA slot arbitration)
+    var newCars = updatedCars;
+    for (final rsu in rsus) {
+      newCars = rsu.manageCars(newCars);
+    }
 
     _carRepo.renewItems(newCars);
 
