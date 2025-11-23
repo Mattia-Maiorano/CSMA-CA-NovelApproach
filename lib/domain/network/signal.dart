@@ -16,6 +16,7 @@ class Signal {
   final int duration;
   final int x;
   final int y;
+  
   SignalData ?data;
   SignalType type;
   int startTick = 0;

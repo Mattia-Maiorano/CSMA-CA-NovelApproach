@@ -1,32 +1,35 @@
+import 'dart:collection';
+
 import 'signal.dart';
 
 class NetworkBitmap {
-  final Map<(int, int), List<Signal>> bitmap = {};
+  final Map<(int, int), Set<Signal>> bitmap = {};
   final Map<(int, int), (double, int)> bitmapResidualIntensity = {};
-  List<Signal> _enqueuedSignals = [];
-  List<Signal> _signals = [];
+  final Queue<Signal> _enqueuedSignals = Queue<Signal>();
+  final Set<Signal> _signals = {};
   int tick = 0;
 
   NetworkBitmap(int width, int height);
 
-  List<Signal> canReserve(int x, int y) {
-    return bitmap[(x, y)] ?? [];
+  Set<Signal> canReserve(int x, int y) {
+    return bitmap[(x, y)] ?? <Signal>{};
   }
 
   void reserve(int x, int y, Signal signal) {
     final key = (x, y);
     if (!bitmap.containsKey(key)) {
-      bitmap[key] = [];
+      bitmap[key] = <Signal>{};
     }
-    _signals.add(signal);
+    if (_signals.add(signal)) {
+      signal.setStartTick(tick);
+    }
     bitmap[key]!.add(signal);
 
     int maxIntensity = 0;
     int noise = 0;
-    Signal ?maxSignal;
+    Signal? maxSignal;
     for (final existingSignal in bitmap[key]!) {
       int intensity = existingSignal.endTick - tick;
-
       if (intensity > maxIntensity) {
         maxIntensity = intensity;
         maxSignal = existingSignal;
@@ -34,12 +37,13 @@ class NetworkBitmap {
       noise += intensity;
     }
 
-    bitmapResidualIntensity[key] = (maxIntensity / noise, maxSignal!.ownerId);
+    // Avoid division by zero and handle nullable maxSignal safely.
+    double ratio = noise > 0 ? (maxIntensity / noise) : 0.0;
+    int ownerId = maxSignal != null ? maxSignal.ownerId : -1;
+    bitmapResidualIntensity[key] = (ratio, ownerId);
   }
 
   void expandSignal(int travelDistance, Signal signal) {
-
-    print('  Expanding signal from owner ${signal.ownerId} to distance $travelDistance');
 
     for (int partialDistance = 0; partialDistance < travelDistance; partialDistance++) {
 
@@ -58,8 +62,6 @@ class NetworkBitmap {
     reserve(signal.x + travelDistance, signal.y - travelDistance, signal);
     reserve(signal.x + travelDistance, signal.y + travelDistance, signal);
 
-    print('  Removing signal from owner ${signal.ownerId} at distance ${travelDistance - 1}');
-
     int removeDistance = travelDistance - 1;
     for (int partialDistance = 0; partialDistance < removeDistance; partialDistance++) {
       bitmap[(signal.x - removeDistance, signal.y - partialDistance)]?.remove(signal);
@@ -67,46 +69,44 @@ class NetworkBitmap {
       bitmap[(signal.x + removeDistance, signal.y - partialDistance)]?.remove(signal);
       bitmap[(signal.x + removeDistance, signal.y + partialDistance)]?.remove(signal);
       bitmap[(signal.x - partialDistance, signal.y - removeDistance)]?.remove(signal);
-      bitmap[(signal.x + partialDistance, signal.y + removeDistance)]?.remove(signal);
-      bitmap[(signal.x - partialDistance, signal.y + removeDistance)]?.remove(signal);
       bitmap[(signal.x + partialDistance, signal.y - removeDistance)]?.remove(signal);
+      bitmap[(signal.x - partialDistance, signal.y + removeDistance)]?.remove(signal);
+      bitmap[(signal.x + partialDistance, signal.y + removeDistance)]?.remove(signal);
     }
     bitmap[(signal.x - removeDistance, signal.y - removeDistance)]?.remove(signal);
     bitmap[(signal.x - removeDistance, signal.y + removeDistance)]?.remove(signal);
     bitmap[(signal.x + removeDistance, signal.y - removeDistance)]?.remove(signal);
     bitmap[(signal.x + removeDistance, signal.y + removeDistance)]?.remove(signal);
-
-    print('  Expansion and removal complete for signal from owner ${signal.ownerId}');
   }
 
   void enqueueSignal(Signal signal) {
-    _enqueuedSignals.add(signal);
+    _enqueuedSignals.addLast(signal);
   }
 
   void step() {
 
-    print('NetworkBitmap Step Tick $tick');
-
     // --- CLEAN UP EXPIRED SIGNALS ---
     _signals.removeWhere((signal) => signal.endTick <= tick);
+    List<(int, int)> keysToRemove = [];
     bitmap.forEach((key, signals) {
       signals.removeWhere((signal) => signal.endTick <= tick);
+      if (signals.isEmpty) keysToRemove.add(key);
     });
-
-    print('  Active signals count: ${_signals.length}');
+    for (final k in keysToRemove) {
+      bitmap.remove(k);
+      bitmapResidualIntensity.remove(k);
+    }
 
     // --- RESERVE ENQUEUED SIGNALS ---
-    for (final signal in _enqueuedSignals) {
+    while (_enqueuedSignals.isNotEmpty) {
+      final signal = _enqueuedSignals.removeFirst();
       if (canReserve(signal.x, signal.y).isEmpty) {
         reserve(signal.x, signal.y, signal);
       }
     }
 
-    print('  Signals after enqueue count: ${_signals.length}');
-
     // --- PROPAGATE SIGNALS ---
-    List<Signal> signalsCopy = List.from(_signals);
-    for (Signal signal in signalsCopy) {
+    for (Signal signal in _signals) {
       int travelDistance = signal.duration - (signal.endTick - tick);
       if (travelDistance <= 0) {
         continue;
@@ -114,7 +114,27 @@ class NetworkBitmap {
       expandSignal(travelDistance, signal);
     }
 
-    print('  Signals after propagation count: ${_signals.length}');
+    // --- RECOMPUTE RESIDUAL INTENSITIES ---
+    bitmap.forEach((key, signals) {
+      if (signals.isEmpty) {
+        bitmapResidualIntensity.remove(key);
+      } else {
+        int maxIntensity = 0;
+        int noise = 0;
+        Signal? maxSignal;
+        for (final existingSignal in signals) {
+          int intensity = existingSignal.endTick - tick;
+          if (intensity > maxIntensity) {
+            maxIntensity = intensity;
+            maxSignal = existingSignal;
+          }
+          noise += intensity;
+        }
+        double ratio = noise > 0 ? (maxIntensity / noise) : 0.0;
+        int ownerId = maxSignal != null ? maxSignal.ownerId : -1;
+        bitmapResidualIntensity[key] = (ratio, ownerId);
+      }
+    });
 
     tick++;
   }
@@ -123,7 +143,13 @@ class NetworkBitmap {
     if (bitmapResidualIntensity.containsKey((x, y))) {
       final (intensity, ownerId) = bitmapResidualIntensity[(x, y)]!;
       if (intensity > 0.5) {
-        return bitmap[(x, y)]!.firstWhere((signal) => signal.destinationId == readerId);
+        final signals = bitmap[(x, y)];
+        if (signals == null) return null;
+        print('SIGNAL FOUND');
+        for (final signal in signals) {
+          if (signal.destinationId == readerId) { print("RETURNING IT"); return signal; }
+        }
+        return null;
       }
     }
     return null;

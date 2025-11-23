@@ -6,8 +6,9 @@ abstract class Entity<T> {
   final int updateInterval;
   final int range;
   final int sensingRange;
+  final int signalDuration;
 
-  Entity(this.id, this.position, this.range, this.updateInterval, this.sensingRange);
+  Entity(this.id, this.position, this.range, this.updateInterval, this.sensingRange, this.signalDuration);
 
   Position getPosition() {
     return position;

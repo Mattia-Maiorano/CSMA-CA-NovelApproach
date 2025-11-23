@@ -1,4 +1,5 @@
 import 'dart:async';
+// image storage logic removed
 
 import 'package:daemon/domain/entities/car.dart';
 import 'package:daemon/domain/entities/entity.dart';
@@ -123,8 +124,6 @@ class Loop {
     final snapshot = List<Car>.from(cars);
     List<Car> updatedCars = [];
 
-    print('Processing ${snapshot.length} cars and ${rsus.length} RSUs');
-
     try {
       for (int i = 0; i < snapshot.length; i++) {
         Signal? signalToRead = _networkBitmap.receiveSignalsAt(snapshot[i].position.x, snapshot[i].position.y, snapshot[i].sensingRange, snapshot[i].id);
@@ -138,14 +137,15 @@ class Loop {
       rethrow;
     }
 
-    print('Processing RSUs...');
-
     try {
       for (final rsu in rsus) {
         Signal? signalToRead = _networkBitmap.receiveSignalsAt(rsu.position.x, rsu.position.y, rsu.sensingRange, rsu.id);
+        print('RSU ${rsu.id} reading signal: $signalToRead');
         if (signalToRead != null) {
           List<Signal> newSignals = rsu.step(updatedCars, _networkBitmap.tick, signalToRead);
+          print('RSU ${rsu.id} generated ${newSignals.length} new signals');
           for (final signal in newSignals) {
+            print('   ENQUEUING RSU SIGNAL: ${signal.type} from RSU ${rsu.id}');
             _networkBitmap.enqueueSignal(signal);
           }
         }
@@ -154,96 +154,12 @@ class Loop {
       rethrow;
     }
 
-    print('Renewing car items...');
-
     try {
       await _carRepo.renewItems(updatedCars);
     } catch (_) {
       rethrow;
     }
 
-    print('Stepping network bitmap...');
-
     _networkBitmap.step();
-
-    print('Printing residual intensity matrix...');
-
-    /////////////////////////////////
-    /// DEBUG: Print residual intensity matrix
-    /////////////////////////////////
-
-    // Build and print a formatted matrix composed by the value bitmapResidualIntensity[0] at location matrix[x][y]
-    final keys = _networkBitmap.bitmapResidualIntensity.keys.toList();
-    if (keys.isEmpty) {
-      // ignore: avoid_print
-      print('Residual intensity matrix (index 0): <empty>');
-    } else {
-      // determine bounds
-      int maxX = 0;
-      int maxY = 0;
-      for (final (int x, int y) in keys) {
-        if (x > maxX) maxX = x;
-        if (y > maxY) maxY = y;
-      }
-
-      // create matrix[x][y] as List of columns (x) each containing rows (y)
-      List<List<double>> matrix = List.generate(maxX + 1, (_) => List.filled(maxY + 1, 0.0));
-
-      for (final (int x, int y) in keys) {
-        final dynamic cell = _networkBitmap.bitmapResidualIntensity[(x, y)];
-        if (cell == null) continue;
-        double value = 0.0;
-        bool assigned = false;
-
-        if (cell is List && (cell as List).isNotEmpty) {
-          final first = (cell as List).first;
-          if (first is num) {
-            value = (first as num).toDouble();
-            assigned = true;
-          }
-        }
-
-        if (!assigned && cell is Map && (cell as Map).containsKey(0)) {
-          final v = (cell as Map)[0];
-          if (v is num) {
-            value = (v as num).toDouble();
-            assigned = true;
-          }
-        }
-
-        if (!assigned && cell is num) {
-          value = (cell as num).toDouble();
-          assigned = true;
-        }
-
-        if (!assigned) {
-          // attempt to read a Dart record (e.g. (num, ...)) using .$1; protect with try/catch
-          try {
-            final dyn = cell as dynamic;
-            final first = dyn.$1;
-            if (first is num) {
-              value = (first as num).toDouble();
-            }
-          } catch (_) {
-            // leave value as 0.0 if it isn't accessible
-          }
-        }
-
-        matrix[x][y] = value;
-      }
-
-      // print header and rows (iterate rows by y so output looks like a matrix)
-      // ignore: avoid_print
-      print('Residual intensity matrix (index 0):');
-      for (int y = 0; y <= maxY; y++) {
-        final rowBuffer = StringBuffer();
-        for (int x = 0; x <= maxX; x++) {
-          final v = matrix[x][y];
-          rowBuffer.write(v.toStringAsFixed(2).padLeft(8));
-        }
-        // ignore: avoid_print
-        print(rowBuffer.toString());
-      }
-    }
   }
 }

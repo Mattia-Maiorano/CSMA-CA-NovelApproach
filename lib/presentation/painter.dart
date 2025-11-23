@@ -5,9 +5,10 @@ import 'package:flutter/material.dart';
 
 class ScenePainter extends CustomPainter {
   final List<Entity> entities;
+  final Map<(int, int), (double, int)> bitmapResidualIntensity;
   final double tileSize;
 
-  ScenePainter(this.entities, this.tileSize);
+  ScenePainter(this.entities, this.bitmapResidualIntensity, this.tileSize);
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -30,10 +31,24 @@ class ScenePainter extends CustomPainter {
             paintCar);
       }
     }
+    for (final entry in bitmapResidualIntensity.entries) {
+      final (x, y) = entry.key;
+      final (ratio, ownerId) = entry.value;
+      if (ratio > 0) {
+        final paintSignal = Paint()
+          ..color = const Color.fromARGB(255, 33, 243, 65).withOpacity(ratio)
+          ..style = PaintingStyle.fill;
+        canvas.drawRect(
+            Rect.fromLTWH(x * tileSize, y * tileSize, tileSize, tileSize),
+            paintSignal);
+      }
+    }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
+
+    return true;
 
     for (int i = 0; i < entities.length; i++) {
       if (entities[i].position != (oldDelegate as ScenePainter).entities[i].position) {

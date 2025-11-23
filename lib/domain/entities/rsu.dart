@@ -8,7 +8,7 @@ class RSU extends Entity{
 
   final Random _rng = Random();
 
-  RSU({required Position position, required int id, required int range, required int updateInterval, required int sensingRange}) : super(id, position, range, updateInterval, sensingRange);
+  RSU({required Position position, required int id, required int range, required int updateInterval, required int sensingRange, required int signalDuration}) : super(id, position, range, updateInterval, sensingRange, signalDuration);
 
   bool checkCollision(Position p1, Position p2) {
 
@@ -41,26 +41,53 @@ class RSU extends Entity{
 
     // Collect conflict pairs
     final List<List<int>> conflictPairs = [];
+    final Set<int> involvedCars = {};
+    final Set<int> stoppedCars = {};
+    final Set<int> totalCars = {};
 
     for (int i = 0; i < n; i++) {
       for (int j = i + 1; j < n; j++) {
         if (checkCollision(updated[i].position, updated[j].position)) {
           conflictPairs.add([i, j]);
+          involvedCars.add(updated[i].id);
+          involvedCars.add(updated[j].id);
         }
+        totalCars.add(updated[i].id);
+        totalCars.add(updated[j].id);
       }
     }
 
     List<Signal> signals = [];
+    for (final carId in totalCars.difference(involvedCars)) {
+      Signal s = Signal(ownerId: id, destinationId: carId, duration: updateInterval, x: 0, y: 0, type: SignalType.data);
+      s.setData( SignalData.free );
+      signals.add(s);
+    }
+
     for (final pair in conflictPairs) {
       final i = pair[0];
       final j = pair[1];
 
-      if (_rng.nextBool()) {
-        Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: updateInterval, x: updated[i].position.x, y: updated[i].position.y, type: SignalType.data);
+      if (stoppedCars.contains(updated[i].id)) {
+        Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: updateInterval, x: updated[j].position.x, y: updated[j].position.y, type: SignalType.data);
+        s.setData( SignalData.stop );
         signals.add(s);
+        stoppedCars.add(updated[j].id);
+      } else if (stoppedCars.contains(updated[j].id)) {
+        Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: updateInterval, x: updated[i].position.x, y: updated[i].position.y, type: SignalType.data);
+        s.setData( SignalData.stop );
+        signals.add(s);
+        stoppedCars.add(updated[i].id);
       } else {
-        Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: updateInterval, x: updated[j].position.x, y: updated[j].position.y, type: SignalType.data);
-        signals.add(s);
+        if (_rng.nextBool()) { 
+          Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: updateInterval, x: updated[i].position.x, y: updated[i].position.y, type: SignalType.data);
+          s.setData( SignalData.stop );
+          signals.add(s);
+        } else {
+          Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: updateInterval, x: updated[j].position.x, y: updated[j].position.y, type: SignalType.data);
+          s.setData( SignalData.stop );
+          signals.add(s);
+        }
       }
     }
 

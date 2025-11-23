@@ -37,13 +37,14 @@ class _MyHomePageState extends State<MyHomePage> {
   late Loop _loop;
 
   // GAME PARAMETERS
-  final int fps = 60;
+  final int fps = 4;
   final double tileSize = 20;
   final int range = 5;
-  final int carFrameUpdateInterval = 30;
-  final int rsuFrameUpdateInterval = 30;
+  final int carFrameUpdateInterval = 9;
+  final int rsuFrameUpdateInterval = 9;
   final int carSensingRange = 3;
   final int rsuSensingRange = 3;
+  final int _signalDuration = 4;
   int gridWidth = 0;
   int gridHeight = 0;
   List<List<int>> grid = [];
@@ -71,8 +72,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (image == null) {
         return;
       }
-
-      print('Image loaded: ${image.width}x${image.height}');
+      
       setState(() {
         gridWidth = image.width;
         gridHeight = image.height;
@@ -116,14 +116,16 @@ class _MyHomePageState extends State<MyHomePage> {
             range: range,
             updateInterval: rsuFrameUpdateInterval,
             sensingRange: rsuSensingRange,
+            signalDuration: _signalDuration,
             );
 
-            _rsuRepo.addItem(rsu);
+            // Add the RSU to the master repo only. `RepoView.addItem` simply
+            // forwards to the master repo, so adding to both caused duplicates.
             _entRepo.addItem(rsu);
           }
 
           if (grid[y][x] != 0) {
-            if (rndm.nextDouble() > 0.95 && carPositions.length < 2) {
+            if (rndm.nextDouble() > 0.8 && carPositions.length < 20) {
               if (!carPositions.contains((x, y))) {
                 carPositions.add((x, y));
               }
@@ -145,9 +147,11 @@ class _MyHomePageState extends State<MyHomePage> {
           range: range,
           updateInterval: carFrameUpdateInterval,
           sensingRange: carSensingRange,
+          signalDuration: _signalDuration,
         );
 
-        _carRepo.addItem(car);
+        // Add the car to the master repo only. The view forwards mutations
+        // to the master, so adding via both produced duplicate entries.
         _entRepo.addItem(car);
       }
       print('Grid loaded: $gridWidth x $gridHeight');
@@ -159,13 +163,13 @@ class _MyHomePageState extends State<MyHomePage> {
   void _start() async {
     
     if (!_started) {
-      print("STARTED");
+      print("------------ STARTED ------------");
       setState(() { _started = true; });
 
       _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps, networkBitmap: _networkBitmap);
       _loop.start();
     } else {
-      print('STOPPED');
+      print("------------ STOPPED ------------");
       _loop.stop();
       await _loop.waitForStop();
 
@@ -251,7 +255,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         if (snapshot.hasData) {
                           final entities = snapshot.data!;
                           return CustomPaint(
-                            painter: ScenePainter(entities.cast<Entity<dynamic>>(), tileSize),
+                            painter: ScenePainter(entities.cast<Entity<dynamic>>(), _networkBitmap.bitmapResidualIntensity, tileSize),
                             child: SizedBox(
                               width: gridWidth * tileSize,
                               height: gridHeight * tileSize,
