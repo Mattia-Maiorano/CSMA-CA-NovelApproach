@@ -65,7 +65,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   Future<void> _loadGrid() async {
     try{
-      final file = (await rootBundle.load('assets/grid.png')).buffer.asUint8List();
+      final file = (await rootBundle.load('assets/simple_grid.png')).buffer.asUint8List();
       final bytes = file;
       final image = img.decodeImage(bytes.buffer.asUint8List());
 
@@ -105,7 +105,7 @@ class _MyHomePageState extends State<MyHomePage> {
           } else if (r == 0 && g == 0 && b == 255) {
             // Blue pixel - left road
             grid[y][x] = 4;
-          } else if (r == 100 && g == 0 && b == 0) {
+          } else if (r == 100 && g == 0 && b == 0 && _entRepo.items.whereType<RSU>().length < 1) {
             RSU rsu = RSU(
             id: numRSUs++,
             position: Position(
@@ -119,13 +119,11 @@ class _MyHomePageState extends State<MyHomePage> {
             signalDuration: _signalDuration,
             );
 
-            // Add the RSU to the master repo only. `RepoView.addItem` simply
-            // forwards to the master repo, so adding to both caused duplicates.
             _entRepo.addItem(rsu);
           }
 
           if (grid[y][x] != 0) {
-            if (rndm.nextDouble() > 0.8 && carPositions.length < 20) {
+            if (rndm.nextDouble() > 0.8 && carPositions.length < 2) {
               if (!carPositions.contains((x, y))) {
                 carPositions.add((x, y));
               }
@@ -150,8 +148,6 @@ class _MyHomePageState extends State<MyHomePage> {
           signalDuration: _signalDuration,
         );
 
-        // Add the car to the master repo only. The view forwards mutations
-        // to the master, so adding via both produced duplicate entries.
         _entRepo.addItem(car);
       }
       print('Grid loaded: $gridWidth x $gridHeight');

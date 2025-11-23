@@ -117,7 +117,7 @@ class Loop {
 
   Future<void> tick() async {
 
-    print("Tick ${_networkBitmap.tick}");
+    print("------- Tick ${_networkBitmap.tick} --------");
 
 
     // Work on a mutable snapshot to avoid modifying an unmodifiable list
@@ -127,9 +127,13 @@ class Loop {
     try {
       for (int i = 0; i < snapshot.length; i++) {
         Signal? signalToRead = _networkBitmap.receiveSignalsAt(snapshot[i].position.x, snapshot[i].position.y, snapshot[i].sensingRange, snapshot[i].id);
+        if (signalToRead != null) {
+          print('${_networkBitmap.tick}-${snapshot[i].id}) 🚗 CAR reading signal: ${signalToRead.data}');
+        }
         final (updatedCar, signal) = snapshot[i].step(_networkBitmap.tick, signalToRead);
         updatedCars.add(updatedCar);
         if (signal != null) {
+          print('${_networkBitmap.tick}-${snapshot[i].id}) 🚗   ENQUEUING CAR: ${signal.type}/${signal.data} to ${signal.destinationId}');
           _networkBitmap.enqueueSignal(signal);
         }
       }
@@ -139,13 +143,13 @@ class Loop {
 
     try {
       for (final rsu in rsus) {
+        print('${_networkBitmap.tick}-${rsu.id}) 🚦 RSU stepping');
         Signal? signalToRead = _networkBitmap.receiveSignalsAt(rsu.position.x, rsu.position.y, rsu.sensingRange, rsu.id);
-        print('RSU ${rsu.id} reading signal: $signalToRead');
         if (signalToRead != null) {
+          print('${_networkBitmap.tick}-${rsu.id}) 🚦 RSU ${rsu.id} reading signal: ${signalToRead?.data}');
           List<Signal> newSignals = rsu.step(updatedCars, _networkBitmap.tick, signalToRead);
-          print('RSU ${rsu.id} generated ${newSignals.length} new signals');
           for (final signal in newSignals) {
-            print('   ENQUEUING RSU SIGNAL: ${signal.type} from RSU ${rsu.id}');
+            print('${_networkBitmap.tick}-${rsu.id}) 🚦   ENQUEUING RSU: ${signal.type}/${signal.data} to ${signal.destinationId}');
             _networkBitmap.enqueueSignal(signal);
           }
         }

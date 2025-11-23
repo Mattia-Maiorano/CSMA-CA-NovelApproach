@@ -59,7 +59,7 @@ class RSU extends Entity{
 
     List<Signal> signals = [];
     for (final carId in totalCars.difference(involvedCars)) {
-      Signal s = Signal(ownerId: id, destinationId: carId, duration: updateInterval, x: 0, y: 0, type: SignalType.data);
+      Signal s = Signal(ownerId: id, destinationId: carId, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
       s.setData( SignalData.free );
       signals.add(s);
     }
@@ -69,22 +69,22 @@ class RSU extends Entity{
       final j = pair[1];
 
       if (stoppedCars.contains(updated[i].id)) {
-        Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: updateInterval, x: updated[j].position.x, y: updated[j].position.y, type: SignalType.data);
+        Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
         s.setData( SignalData.stop );
         signals.add(s);
         stoppedCars.add(updated[j].id);
       } else if (stoppedCars.contains(updated[j].id)) {
-        Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: updateInterval, x: updated[i].position.x, y: updated[i].position.y, type: SignalType.data);
+        Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
         s.setData( SignalData.stop );
         signals.add(s);
         stoppedCars.add(updated[i].id);
       } else {
         if (_rng.nextBool()) { 
-          Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: updateInterval, x: updated[i].position.x, y: updated[i].position.y, type: SignalType.data);
+          Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
           s.setData( SignalData.stop );
           signals.add(s);
         } else {
-          Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: updateInterval, x: updated[j].position.x, y: updated[j].position.y, type: SignalType.data);
+          Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
           s.setData( SignalData.stop );
           signals.add(s);
         }

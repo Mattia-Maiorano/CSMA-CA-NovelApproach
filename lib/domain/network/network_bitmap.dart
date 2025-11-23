@@ -100,7 +100,9 @@ class NetworkBitmap {
     // --- RESERVE ENQUEUED SIGNALS ---
     while (_enqueuedSignals.isNotEmpty) {
       final signal = _enqueuedSignals.removeFirst();
-      if (canReserve(signal.x, signal.y).isEmpty) {
+      print("${tick}-${signal.ownerId}) 🛜 enqueuing signal with data ${signal.data} for ${signal.destinationId}");
+      if (canReserve(signal.x, signal.y).isEmpty || true) {
+        print("${tick}-${signal.ownerId}) 🛜 reserving signal with data ${signal.data} for ${signal.destinationId} at (${signal.x}, ${signal.y})");
         reserve(signal.x, signal.y, signal);
       }
     }
@@ -145,9 +147,10 @@ class NetworkBitmap {
       if (intensity > 0.5) {
         final signals = bitmap[(x, y)];
         if (signals == null) return null;
-        print('SIGNAL FOUND');
         for (final signal in signals) {
-          if (signal.destinationId == readerId) { print("RETURNING IT"); return signal; }
+          // First we check that the signal is from the strongest owner.
+          // Then we check that the signal is either broadcast (destinationId == -1) or specifically addressed to the reader.
+          if (signal.ownerId == ownerId && (signal.destinationId == readerId || signal.destinationId == -1)) return signal;
         }
         return null;
       }

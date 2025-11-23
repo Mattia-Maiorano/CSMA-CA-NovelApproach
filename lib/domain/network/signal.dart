@@ -8,6 +8,7 @@ enum SignalType {
 enum SignalData {
   stop,
   free,
+  query,
 }
 
 class Signal {
