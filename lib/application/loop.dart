@@ -4,15 +4,16 @@ import 'dart:async';
 import 'package:daemon/domain/entities/car.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/rsu.dart';
-import 'package:daemon/domain/network/network_bitmap.dart';
+import 'package:daemon/domain/network/medium.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/domain/repositories/base_repo.dart';
+import 'package:daemon/utils/config.dart';
 
 class Loop {
   final Duration frameDuration;
   final BaseRepo<Car> _carRepo;
   final BaseRepo<RSU> _rsuRepo;
-  final NetworkBitmap _networkBitmap;
+  final Medium medium;
   StreamSubscription<List<Car>>? carsSub;
   StreamSubscription<List<RSU>>? rsusSub;
   List<Car> cars = [];
@@ -22,9 +23,8 @@ class Loop {
   Future<void>? _loopFuture;
   Completer<void>? _completer;
 
-  Loop({required NetworkBitmap networkBitmap, required BaseRepo<Car> carRepo, required BaseRepo<RSU> rsuRepo, required BaseRepo<Entity> entRepo, required int fps})
-      : _networkBitmap = networkBitmap,
-        _carRepo = carRepo,
+  Loop({required this.medium, required BaseRepo<Car> carRepo, required BaseRepo<RSU> rsuRepo, required BaseRepo<Entity> entRepo, required int fps})
+      : _carRepo = carRepo,
         _rsuRepo = rsuRepo,
         frameDuration = Duration(milliseconds: (1000 / fps).round());
   Future<void> start() {
@@ -82,8 +82,8 @@ class Loop {
         final frameStart = DateTime.now();
 
         try {
-          for (int i = 0; i < subFrames; i++) {
-            await tick();
+          for (int i = 0; i < SUBFRAMES; i++) {
+            await tick(i);
           }
         } catch (e) {
           print('Error during loop tick: $e');
@@ -117,9 +117,9 @@ class Loop {
     }
   }
 
-  Future<void> tick() async {
+  Future<void> tick(int i) async {
 
-    print("------- Tick ${_networkBitmap.tick} --------");
+    print("------- Tick $i --------");
 
 
     // Work on a mutable snapshot to avoid modifying an unmodifiable list
@@ -128,15 +128,19 @@ class Loop {
 
     try {
       for (int i = 0; i < snapshot.length; i++) {
-        Signal? signalToRead = _networkBitmap.receiveSignalsAt(snapshot[i].position.x, snapshot[i].position.y, snapshot[i].sensingRange, snapshot[i].id);
-        if (signalToRead != null) {
-          print('${_networkBitmap.tick}-${snapshot[i].id}) 🚗 CAR reading signal: ${signalToRead.data}');
-        }
-        final (updatedCar, signal) = snapshot[i].step(_networkBitmap.tick, signalToRead);
+        Signal? signalToRead = medium.sense(
+            snapshot[i].position.x,
+            snapshot[i].position.y,
+            snapshot[i].sensingRange,
+            snapshot[i].id);
+        if (signalToRead != null) print('$i-${snapshot[i].id}) 🚗 CAR reading signal: ${signalToRead.data}');
+
+        final (updatedCar, signal) = snapshot[i].step(i, signalToRead);
         updatedCars.add(updatedCar);
+        
         if (signal != null) {
-          print('${_networkBitmap.tick}-${snapshot[i].id}) 🚗   ENQUEUING CAR: ${signal.type}/${signal.data} to ${signal.destinationId}');
-          _networkBitmap.enqueueSignal(signal);
+          print('$i-${snapshot[i].id}) 🚗   ENQUEUING CAR: ${signal.type}/${signal.data} to ${signal.destinationId}');
+          medium.transmit(signal);
         }
       }
     } catch (_) {

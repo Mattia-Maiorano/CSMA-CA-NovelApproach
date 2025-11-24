@@ -3,7 +3,7 @@ import 'dart:math';
 
 import 'package:daemon/data/in_mem_repo_base.dart';
 import 'package:daemon/data/repo_view.dart';
-import 'package:daemon/domain/network/network_bitmap.dart';
+import 'package:daemon/domain/network/medium.dart';
 import 'package:daemon/domain/repositories/base_repo.dart';
 import 'package:daemon/application/loop.dart';
 import 'package:daemon/domain/entities/car.dart';
@@ -30,7 +30,7 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   bool _started = false;
-  late final NetworkBitmap _networkBitmap;
+  late final Medium medium = Medium();
   late final BaseRepo<Car> _carRepo;
   late final BaseRepo<RSU> _rsuRepo;
   late final InMemRepoBase<Entity<dynamic>> _entRepo;
@@ -60,7 +60,6 @@ class _MyHomePageState extends State<MyHomePage> {
     Completer <void> completer = Completer<void>();
 
     completer.complete(_loadGrid());
-    _networkBitmap = NetworkBitmap(gridWidth, gridHeight);
     print("Loading grid...");
   }
 
@@ -163,7 +162,7 @@ class _MyHomePageState extends State<MyHomePage> {
       print("------------ STARTED ------------");
       setState(() { _started = true; });
 
-      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps, networkBitmap: _networkBitmap);
+      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps);
       _loop.start();
     } else {
       print("------------ STOPPED ------------");
@@ -252,7 +251,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         if (snapshot.hasData) {
                           final entities = snapshot.data!;
                           return CustomPaint(
-                            painter: ScenePainter(entities.cast<Entity<dynamic>>(), _networkBitmap.bitmapResidualIntensity, tileSize),
+                            painter: ScenePainter(entities.cast<Entity<dynamic>>(), tileSize),
                             child: SizedBox(
                               width: gridWidth * tileSize,
                               height: gridHeight * tileSize,

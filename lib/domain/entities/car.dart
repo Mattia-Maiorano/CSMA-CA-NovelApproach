@@ -1,55 +1,92 @@
 import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/network/signal.dart';
+import 'package:daemon/utils/config.dart';
 
 class Car extends Entity {
-  final int model;
   final List<List<int>> manhattanGrid;
-  bool enqueuedStopSignal = false;
+  final int model;
 
-  Car({required int id, required this.model, required Position position, required this.manhattanGrid, required int range, required int updateInterval, required int sensingRange, required int signalDuration}) : super(id, position, range, updateInterval, sensingRange, signalDuration);
+  int _timer = 0;
+  int enqueuedStopSender = -1;
+  int enqueuedCtsSender = -1;
+  bool sendRts = false;
+
+  Car({required int id, required this.model, required Position position, required this.manhattanGrid, required int range, required int sensingRange, required int signalDuration}) : super(id, position, range, sensingRange, signalDuration);
 
   (Car, Signal?) step(int tick, Signal? signalToRead) {
 
+    _timer++;
+
+    // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
     Signal? signal;
-    if (tick % updateInterval == 1) {
-      signal = Signal(ownerId: id, destinationId: -1, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
-      signal.setData(SignalData.query);
+    if (signalToRead != null) {
+      // NEED TO IMPLEMENT BACKOFF
+      _timer = 0;
+      if (signalToRead.data == SignalData.stop) {
+        enqueuedStopSender = signalToRead.ownerId;
+      } else if (signalToRead.type == SignalType.cts) {
+        enqueuedCtsSender = signalToRead.ownerId;
+      }
+    } else if (tick % BROADCASTINTERVAL == 0) {
+        sendRts = true;
     }
 
-    if (signalToRead != null && signalToRead.data == SignalData.stop) {
-      enqueuedStopSignal = true;
+    // ---- SEND RESPONSES AFTER IFS ----
+    if (tick % SUBFRAMES != 0 || enqueuedStopSender != -1) {
+        signal = Signal(
+          type: SignalType.ack,
+          data: SignalData.ack,
+          x: position.x,
+          y: position.y,
+          duration: signalDuration,
+          ownerId: id,
+          destinationId: enqueuedStopSender,
+        );
+      return (Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid, range: range, sensingRange: sensingRange, signalDuration: signalDuration), signal);
+    } else if (enqueuedCtsSender != -1 && _timer % SIFS == 0) {
+      signal = Signal(
+        type: SignalType.data,
+        data: SignalData.position,
+        x: position.x,
+        y: position.y,
+        duration: signalDuration,
+        ownerId: id,
+        destinationId: enqueuedCtsSender,
+      );
+      return (Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid, range: range, sensingRange: sensingRange, signalDuration: signalDuration), signal);
+    } else if (sendRts && _timer % SIFS == 0) {
+      sendRts = false;
+      signal = Signal(
+        type: SignalType.rts,
+        data: SignalData.query,
+        x: position.x,
+        y: position.y,
+        duration: signalDuration,
+        ownerId: id,
+        destinationId: -1, // broadcast
+      );
+      return (Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid, range: range, sensingRange: sensingRange, signalDuration: signalDuration), signal);
     }
 
-    // Stop the car if it has received a stop signal or it is not its time to move
-    if (enqueuedStopSignal) {
-      print ('$tick-$id) Car stopping');
-      enqueuedStopSignal = false;
-      return (Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid, range: range, updateInterval: updateInterval, sensingRange: sensingRange, signalDuration: signalDuration), signal);
-    }
-    if (tick % updateInterval != 0) {
-      return (Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid, range: range, updateInterval: updateInterval, sensingRange: sensingRange, signalDuration: signalDuration), signal);
-    }
-
+    // ---- MOVEMENT LOGIC ----
     if (manhattanGrid[position.y][position.x] == 5) {
       position.direction = position.newDirection();
     }
 
     Position newPosition = moveForward();
-
-
     int maxRetries = 10;
     while(manhattanGrid[newPosition.y][newPosition.x] == 0 ||
           (manhattanGrid[newPosition.y][newPosition.x] != position.direction.index + 1 && manhattanGrid[newPosition.y][newPosition.x] != 5)
     ) {
       if (maxRetries-- <= 0) {
-        return (Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid, range: range, updateInterval: updateInterval, sensingRange: sensingRange, signalDuration: signalDuration), signal);
+        return (Car(id: id, model: model, position: position, manhattanGrid: manhattanGrid, range: range, sensingRange: sensingRange, signalDuration: signalDuration), signal);
       }
       position.direction = position.newDirection();
       newPosition = moveForward();
     }
 
-    return (Car(id: id, model: model, position: newPosition, manhattanGrid: manhattanGrid, range: range, updateInterval: updateInterval, sensingRange: sensingRange, signalDuration: signalDuration), signal);
+    return (Car(id: id, model: model, position: newPosition, manhattanGrid: manhattanGrid, range: range, sensingRange: sensingRange, signalDuration: signalDuration), signal);
   }
 
   Position moveForward() {

@@ -9,6 +9,8 @@ enum SignalData {
   stop,
   free,
   query,
+  position,
+  ack,
 }
 
 class Signal {
