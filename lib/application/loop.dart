@@ -82,7 +82,9 @@ class Loop {
         final frameStart = DateTime.now();
 
         try {
-          await tick();
+          for (int i = 0; i < subFrames; i++) {
+            await tick();
+          }
         } catch (e) {
           print('Error during loop tick: $e');
         }

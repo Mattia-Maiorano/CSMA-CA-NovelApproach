@@ -3,80 +3,17 @@ import 'dart:collection';
 import 'signal.dart';
 
 class NetworkBitmap {
-  final Map<(int, int), Set<Signal>> bitmap = {};
-  final Map<(int, int), (double, int)> bitmapResidualIntensity = {};
   final Queue<Signal> _enqueuedSignals = Queue<Signal>();
   final Set<Signal> _signals = {};
   int tick = 0;
 
   NetworkBitmap(int width, int height);
 
-  Set<Signal> canReserve(int x, int y) {
-    return bitmap[(x, y)] ?? <Signal>{};
-  }
-
   void reserve(int x, int y, Signal signal) {
     final key = (x, y);
-    if (!bitmap.containsKey(key)) {
-      bitmap[key] = <Signal>{};
-    }
     if (_signals.add(signal)) {
       signal.setStartTick(tick);
     }
-    bitmap[key]!.add(signal);
-
-    int maxIntensity = 0;
-    int noise = 0;
-    Signal? maxSignal;
-    for (final existingSignal in bitmap[key]!) {
-      int intensity = existingSignal.endTick - tick;
-      if (intensity > maxIntensity) {
-        maxIntensity = intensity;
-        maxSignal = existingSignal;
-      }
-      noise += intensity;
-    }
-
-    // Avoid division by zero and handle nullable maxSignal safely.
-    double ratio = noise > 0 ? (maxIntensity / noise) : 0.0;
-    int ownerId = maxSignal != null ? maxSignal.ownerId : -1;
-    bitmapResidualIntensity[key] = (ratio, ownerId);
-  }
-
-  void expandSignal(int travelDistance, Signal signal) {
-
-    for (int partialDistance = 0; partialDistance < travelDistance; partialDistance++) {
-
-      reserve(signal.x - travelDistance, signal.y - partialDistance, signal);
-      reserve(signal.x - travelDistance, signal.y + partialDistance, signal);
-      reserve(signal.x + travelDistance, signal.y - partialDistance, signal);
-      reserve(signal.x + travelDistance, signal.y + partialDistance, signal);
-      reserve(signal.x - partialDistance, signal.y - travelDistance, signal);
-      reserve(signal.x + partialDistance, signal.y - travelDistance, signal);
-      reserve(signal.x - partialDistance, signal.y + travelDistance, signal);
-      reserve(signal.x + partialDistance, signal.y + travelDistance, signal);
-
-    }
-    reserve(signal.x - travelDistance, signal.y - travelDistance, signal);
-    reserve(signal.x - travelDistance, signal.y + travelDistance, signal);
-    reserve(signal.x + travelDistance, signal.y - travelDistance, signal);
-    reserve(signal.x + travelDistance, signal.y + travelDistance, signal);
-
-    int removeDistance = travelDistance - 1;
-    for (int partialDistance = 0; partialDistance < removeDistance; partialDistance++) {
-      bitmap[(signal.x - removeDistance, signal.y - partialDistance)]?.remove(signal);
-      bitmap[(signal.x - removeDistance, signal.y + partialDistance)]?.remove(signal);
-      bitmap[(signal.x + removeDistance, signal.y - partialDistance)]?.remove(signal);
-      bitmap[(signal.x + removeDistance, signal.y + partialDistance)]?.remove(signal);
-      bitmap[(signal.x - partialDistance, signal.y - removeDistance)]?.remove(signal);
-      bitmap[(signal.x + partialDistance, signal.y - removeDistance)]?.remove(signal);
-      bitmap[(signal.x - partialDistance, signal.y + removeDistance)]?.remove(signal);
-      bitmap[(signal.x + partialDistance, signal.y + removeDistance)]?.remove(signal);
-    }
-    bitmap[(signal.x - removeDistance, signal.y - removeDistance)]?.remove(signal);
-    bitmap[(signal.x - removeDistance, signal.y + removeDistance)]?.remove(signal);
-    bitmap[(signal.x + removeDistance, signal.y - removeDistance)]?.remove(signal);
-    bitmap[(signal.x + removeDistance, signal.y + removeDistance)]?.remove(signal);
   }
 
   void enqueueSignal(Signal signal) {

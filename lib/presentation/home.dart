@@ -38,6 +38,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
   // GAME PARAMETERS
   final int fps = 4;
+  final int subFrames = 250000;
   final double tileSize = 20;
   final int range = 5;
   final int carFrameUpdateInterval = 9;
