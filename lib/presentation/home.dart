@@ -10,6 +10,7 @@ import 'package:daemon/domain/entities/car.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/rsu.dart';
 import 'package:daemon/domain/entities/position.dart';
+import 'package:daemon/utils/config.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -45,7 +46,6 @@ class _MyHomePageState extends State<MyHomePage> {
   final int rsuFrameUpdateInterval = 9;
   final int carSensingRange = 3;
   final int rsuSensingRange = 3;
-  final int _signalDuration = 4;
   int gridWidth = 0;
   int gridHeight = 0;
   List<List<int>> grid = [];
@@ -114,9 +114,8 @@ class _MyHomePageState extends State<MyHomePage> {
               direction: Direction.up,
             ),
             range: range,
-            updateInterval: rsuFrameUpdateInterval,
             sensingRange: rsuSensingRange,
-            signalDuration: _signalDuration,
+            signalDuration: SIGNALDURATION,
             );
 
             _entRepo.addItem(rsu);
@@ -143,9 +142,9 @@ class _MyHomePageState extends State<MyHomePage> {
           position: Position(x: carX, y: carY, direction: direction),
           manhattanGrid: grid,
           range: range,
-          updateInterval: carFrameUpdateInterval,
           sensingRange: carSensingRange,
-          signalDuration: _signalDuration,
+          signalDuration: SIGNALDURATION,
+          timer: rndm.nextInt(10),
         );
 
         _entRepo.addItem(car);
@@ -162,7 +161,7 @@ class _MyHomePageState extends State<MyHomePage> {
       print("------------ STARTED ------------");
       setState(() { _started = true; });
 
-      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps);
+      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps, medium: medium);
       _loop.start();
     } else {
       print("------------ STOPPED ------------");
@@ -251,7 +250,7 @@ class _MyHomePageState extends State<MyHomePage> {
                         if (snapshot.hasData) {
                           final entities = snapshot.data!;
                           return CustomPaint(
-                            painter: ScenePainter(entities.cast<Entity<dynamic>>(), tileSize),
+                            painter: ScenePainter(entities.cast<Entity<dynamic>>(), medium, tileSize),
                             child: SizedBox(
                               width: gridWidth * tileSize,
                               height: gridHeight * tileSize,

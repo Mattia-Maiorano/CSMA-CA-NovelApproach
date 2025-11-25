@@ -1,96 +1,138 @@
 import 'dart:math';
 import 'package:daemon/domain/entities/entity.dart';
-import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/entities/car.dart';
+import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/network/signal.dart';
+import 'package:daemon/utils/config.dart';
 
 class RSU extends Entity{
 
-  final Random _rng = Random();
+  Car? communicationCar;
+  List<Car> knownCars = [];
 
-  RSU({required Position position, required int id, required int range, required int updateInterval, required int sensingRange, required int signalDuration}) : super(id, position, range, updateInterval, sensingRange, signalDuration);
+  int enqueuedRtsSender = -1;
+  int enqueuedQuerySender = -1;
+  int enqueuedPositionSender = -1;
 
-  bool checkCollision(Position p1, Position p2) {
+  bool resend = false;
+  bool response = false;
+  bool communication = false;
 
-    final distance1 = sqrt(pow(position.x - p1.x, 2) + pow(position.y - p1.y, 2));
-    final distance2 = sqrt(pow(position.x - p2.x, 2) + pow(position.y - p2.y, 2));
-    final distance = max(distance1, distance2);
-    if (distance > range) return false;
+  RSU({required Position position, required int id, required int range, required int sensingRange, required int signalDuration, int timer = 0}) : super(id, position, range, sensingRange, signalDuration, timer);
 
-    final next1x = p1.x + p1.xVerse;
-    final next1y = p1.y + p1.yVerse;
-    final next2x = p2.x + p2.xVerse;
-    final next2y = p2.y + p2.yVerse;
+  Signal? step(int tick, Signal? signalToRead) {
+    
+    timer++;
 
-    if (next1x == next2x && next1y == next2y) return true;
+    // ---- RESET COUNTER LOGIC ----
+    if (communication && timeout > 0) {
+      timeout--;
+    } else {
+      timeout = RESETTIME;
+      communicationCar = null;
+      enqueuedQuerySender = -1;
+      enqueuedRtsSender = -1;
+      communication = false;
+      response = false;
+      resend = false;
+    }
 
-    if (next1x == p2.x && next1y == p2.y && next2x == p1.x && next2y == p1.y) return true;
+    // ---- SENSING LOGIC ----
+    if (signalToRead != null) { // OCCUPIED MEDIUM
+      // NEED TO IMPLEMENT BACKOFF
+      timer = 0;
+      timer -= backOff();
+    }
 
-    if (p1.conflictingDirection(p2.direction)) {
-      if (p1.x == p2.x) return true; // vertical head-on
-      if (p1.y == p2.y) return true; // horizontal head-on
+    // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
+    Signal? signal;
+    if (signalToRead != null && (signalToRead.destinationId == id || signalToRead.destinationId == -1)) { // OCCUPIED MEDIUM
+      if (signalToRead.type == SignalType.rts) {
+        updateKnowledge(signalToRead.car!);
+        if (!communication) {
+          communication = true;
+          enqueuedRtsSender = signalToRead.ownerId;
+          timeout = RESETTIME;
+        }
+      } else if (signalToRead.data == SignalData.position || resend) {
+          enqueuedQuerySender = signalToRead.ownerId;
+          response = collision();
+          response ? print('RSU $id detects potential collision for Car ${communicationCar!.id} at position ${communicationCar!.position}') : print('No collision detected for ${signalToRead.ownerId}');
+          timeout = RESETTIME;
+      } else if (signalToRead.type == SignalType.ack) {
+        communication = false;
+      }
+    } else if (signalToRead == null) { // FREE MEDIUM
+
+      // ---- SEND RESPONSES AFTER IFS ----
+      //    send cts
+      if (timer % SIFS == 0 && enqueuedRtsSender != -1) {
+          signal = Signal(
+            type: SignalType.cts,
+            data: SignalData.ack,
+            x: position.x,
+            y: position.y,
+            duration: signalDuration,
+            ownerId: id,
+            destinationId: enqueuedRtsSender,
+          );
+          enqueuedRtsSender = -1;
+
+      //    send stop
+      } else if ((enqueuedQuerySender != -1 && timer % SIFS == 0) || (resend && timer % SIFS == 0)) {
+        signal = Signal(
+          type: SignalType.data,
+          data: response ? SignalData.stop : SignalData.free,
+          x: position.x,
+          y: position.y,
+          duration: signalDuration,
+          ownerId: id,
+          destinationId: enqueuedQuerySender,
+        );
+        enqueuedQuerySender = -1;
+        resend = false;
+      }
+
+    } // END FREE MEDIUM
+
+    return signal;
+  }
+
+  void updateKnowledge(Car newcar) {
+    knownCars.add(newcar);
+    communicationCar = newcar;
+  }
+
+  bool collision() {
+    
+    final int cx = communicationCar!.position.x;
+    final int cy = communicationCar!.position.y;
+    final int cxNext = cx + communicationCar!.position.xVerse;
+    final int cyNext = cy + communicationCar!.position.yVerse;
+
+    // iterate once over known cars and look for potential conflicts
+    for (final other in knownCars) {
+      if (other.id == communicationCar!.id) continue;
+
+      final int ox = other.position.x;
+      final int oy = other.position.y;
+
+      // crossing at next step: if both cars will move into the same cell next tick
+      final int oxNext = ox + other.position.xVerse;
+      final int oyNext = oy + other.position.yVerse;
+      if (oxNext == cxNext && oyNext == cyNext) return true;
+
+      // approaching into each other's next position (swap)
+      if (oxNext == cx && oyNext == cy && ox == cxNext && oy == cyNext) return true;
     }
 
     return false;
   }
 
-  List<Signal> step(List<Car> cars, int tick, Signal signal) {
-    
-    final updated = cars.toList();
-    final int n = updated.length;
 
-    // Collect conflict pairs
-    final List<List<int>> conflictPairs = [];
-    final Set<int> involvedCars = {};
-    final Set<int> stoppedCars = {};
-    final Set<int> totalCars = {};
+  int backOff(){
 
-    for (int i = 0; i < n; i++) {
-      for (int j = i + 1; j < n; j++) {
-        if (checkCollision(updated[i].position, updated[j].position)) {
-          conflictPairs.add([i, j]);
-          involvedCars.add(updated[i].id);
-          involvedCars.add(updated[j].id);
-        }
-        totalCars.add(updated[i].id);
-        totalCars.add(updated[j].id);
-      }
-    }
 
-    List<Signal> signals = [];
-    for (final carId in totalCars.difference(involvedCars)) {
-      Signal s = Signal(ownerId: id, destinationId: carId, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
-      s.setData( SignalData.free );
-      signals.add(s);
-    }
-
-    for (final pair in conflictPairs) {
-      final i = pair[0];
-      final j = pair[1];
-
-      if (stoppedCars.contains(updated[i].id)) {
-        Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
-        s.setData( SignalData.stop );
-        signals.add(s);
-        stoppedCars.add(updated[j].id);
-      } else if (stoppedCars.contains(updated[j].id)) {
-        Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
-        s.setData( SignalData.stop );
-        signals.add(s);
-        stoppedCars.add(updated[i].id);
-      } else {
-        if (_rng.nextBool()) { 
-          Signal s = Signal(ownerId: id, destinationId: updated[j].id, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
-          s.setData( SignalData.stop );
-          signals.add(s);
-        } else {
-          Signal s = Signal(ownerId: id, destinationId: updated[i].id, duration: signalDuration, x: position.x, y: position.y, type: SignalType.data);
-          s.setData( SignalData.stop );
-          signals.add(s);
-        }
-      }
-    }
-
-    return signals;
+    return 0;
   }
 }

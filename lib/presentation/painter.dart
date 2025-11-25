@@ -1,18 +1,22 @@
 import 'package:daemon/domain/entities/car.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/rsu.dart';
+import 'package:daemon/domain/network/medium.dart';
+import 'package:daemon/domain/network/signal.dart';
 import 'package:flutter/material.dart';
 
 class ScenePainter extends CustomPainter {
   final List<Entity> entities;
-  final Map<(int, int), (double, int)> bitmapResidualIntensity;
+  final Medium medium;
   final double tileSize;
 
-  ScenePainter(this.entities, this.bitmapResidualIntensity, this.tileSize);
+  ScenePainter(this.entities, this.medium, this.tileSize);
 
   @override
   void paint(Canvas canvas, Size size) {
     final paintCar = Paint()..color = Colors.blue;
+    final paintStoppedCar = Paint()..color = Colors.yellow;
+    final paintFreeCar = Paint()..color = Colors.green;
     final paintRSU = Paint()..color = Colors.red;
     final paintRSUrange = Paint()
       ..color = Colors.red.withOpacity(0.2)
@@ -25,23 +29,34 @@ class ScenePainter extends CustomPainter {
             paintRSU);
         canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * tileSize, paintRSUrange);
       } else if (ent is Car) {
-        canvas.drawCircle(
+        if (ent.stop == true) {
+          canvas.drawCircle(
             Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
             tileSize / 2,
-            paintCar);
+            paintStoppedCar);
+        } else if (ent.free == true) {
+          canvas.drawCircle(
+            Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
+            tileSize / 2,
+            paintFreeCar);
+        } else {
+          canvas.drawCircle(
+              Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
+              tileSize / 2,
+              paintCar);
+        }
       }
     }
-    for (final entry in bitmapResidualIntensity.entries) {
-      final (x, y) = entry.key;
-      final (ratio, ownerId) = entry.value;
-      if (ratio > 0) {
-        final paintSignal = Paint()
-          ..color = const Color.fromARGB(255, 33, 243, 65).withOpacity(ratio)
-          ..style = PaintingStyle.fill;
-        canvas.drawRect(
-            Rect.fromLTWH(x * tileSize, y * tileSize, tileSize, tileSize),
-            paintSignal);
-      }
+    List<Signal> signals = medium.signals;
+    for (final signal in signals) {
+      final paintSignal = Paint()
+        ..color = signal.type == SignalType.rts ? Colors.green : (signal.type == SignalType.ack ? Colors.orange : Colors.purple)
+        ..style = PaintingStyle.stroke
+        ..strokeWidth = 2.0;
+      canvas.drawCircle(
+          Offset(signal.x * tileSize + tileSize / 2, signal.y * tileSize + tileSize / 2),
+          signal.duration * tileSize,
+          paintSignal);
     }
   }
 

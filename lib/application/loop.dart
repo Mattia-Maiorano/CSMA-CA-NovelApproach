@@ -78,10 +78,12 @@ class Loop {
     await rsusReady.future;
 
     try {
+      int run = 0;
       while (_running) {
         final frameStart = DateTime.now();
 
         try {
+          print("------- Tick ${run++} --------");
           for (int i = 0; i < SUBFRAMES; i++) {
             await tick(i);
           }
@@ -117,29 +119,35 @@ class Loop {
     }
   }
 
-  Future<void> tick(int i) async {
-
-    print("------- Tick $i --------");
-
+  Future<void> tick(int tick) async {
 
     // Work on a mutable snapshot to avoid modifying an unmodifiable list
     final snapshot = List<Car>.from(cars);
     List<Car> updatedCars = [];
 
+    ///////////////
+    /// CAR LOGIC
+    ///////////////
     try {
       for (int i = 0; i < snapshot.length; i++) {
+        Car forCar = snapshot[i];
         Signal? signalToRead = medium.sense(
-            snapshot[i].position.x,
-            snapshot[i].position.y,
-            snapshot[i].sensingRange,
-            snapshot[i].id);
-        if (signalToRead != null) print('$i-${snapshot[i].id}) 🚗 CAR reading signal: ${signalToRead.data}');
+            forCar.position.x,
+            forCar.position.y,
+            forCar.sensingRange,
+            forCar.id);
+        if (signalToRead != null) {
+          if (signalToRead.destinationId == forCar.id) {
+            print('$tick-${forCar.id})\t🚗\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}');
+          } else {
+          }
+        }
 
-        final (updatedCar, signal) = snapshot[i].step(i, signalToRead);
+        final (updatedCar, signal) = snapshot[i].step(tick, signalToRead);
         updatedCars.add(updatedCar);
         
         if (signal != null) {
-          print('$i-${snapshot[i].id}) 🚗   ENQUEUING CAR: ${signal.type}/${signal.data} to ${signal.destinationId}');
+          print('$tick-${forCar.id})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
           medium.transmit(signal);
         }
       }
@@ -147,17 +155,29 @@ class Loop {
       rethrow;
     }
 
+    ///////////////
+    /// RSU LOGIC
+    ///////////////
     try {
       for (final rsu in rsus) {
-        print('${_networkBitmap.tick}-${rsu.id}) 🚦 RSU stepping');
-        Signal? signalToRead = _networkBitmap.receiveSignalsAt(rsu.position.x, rsu.position.y, rsu.sensingRange, rsu.id);
+        Signal? signalToRead = medium.sense(
+            rsu.position.x,
+            rsu.position.y,
+            rsu.sensingRange,
+            rsu.id);
         if (signalToRead != null) {
-          print('${_networkBitmap.tick}-${rsu.id}) 🚦 RSU ${rsu.id} reading signal: ${signalToRead?.data}');
-          List<Signal> newSignals = rsu.step(updatedCars, _networkBitmap.tick, signalToRead);
-          for (final signal in newSignals) {
-            print('${_networkBitmap.tick}-${rsu.id}) 🚦   ENQUEUING RSU: ${signal.type}/${signal.data} to ${signal.destinationId}');
-            _networkBitmap.enqueueSignal(signal);
+          if (signalToRead.destinationId == rsu.id || signalToRead.destinationId == -1) {
+            print('$tick-${rsu.id})\t🚦\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}');
+          } else {
+
           }
+        }
+
+        final signal = rsu.step(tick, signalToRead);
+
+        if (signal != null) {
+          print('$tick-${rsu.id})\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
+          medium.transmit(signal);
         }
       }
     } catch (_) {
@@ -170,6 +190,10 @@ class Loop {
       rethrow;
     }
 
-    _networkBitmap.step();
+    ///////////////
+    /// MEDIUM LOGIC
+    ///////////////
+    medium.step();
+
   }
 }

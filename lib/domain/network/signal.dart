@@ -1,3 +1,5 @@
+import 'package:daemon/domain/entities/car.dart';
+
 enum SignalType {
   ack,
   rts,
@@ -16,16 +18,16 @@ enum SignalData {
 class Signal {
   final int ownerId;
   final int destinationId;
-  final int duration;
   final int x;
   final int y;
+  final Car? car;
+  int duration;
   
   SignalData ?data;
   SignalType type;
   int startTick = 0;
-  int get endTick => startTick + duration;
 
-  Signal({required this.ownerId, required this.destinationId, required this.duration, required this.x, required this.y, required this.type, this.data});
+  Signal({required this.ownerId, required this.destinationId, required this.duration, required this.x, required this.y, required this.type, this.data, this.car});
 
   void setData(SignalData data) {
     this.data = data;
