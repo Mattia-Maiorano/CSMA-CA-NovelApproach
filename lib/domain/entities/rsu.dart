@@ -8,7 +8,7 @@ import 'package:daemon/utils/config.dart';
 class RSU extends Entity{
 
   Car? communicationCar;
-  List<Car> knownCars = [];
+  List<(Car, int)> knownCars = [];
 
   int enqueuedRtsSender = -1;
   int enqueuedQuerySender = -1;
@@ -38,17 +38,21 @@ class RSU extends Entity{
     }
 
     // ---- SENSING LOGIC ----
-    if (signalToRead != null) { // OCCUPIED MEDIUM
-      // NEED TO IMPLEMENT BACKOFF
-      timer = 0;
-      timer -= backOff();
+    if (timer % SIFS == 0 || timer % DIFS == 0) {
+      if (signalToRead != null && signalToRead.ownerId != id) { // OCCUPIED MEDIUM
+        timer = 0;
+        timer -= backOff();
+        if (signalToRead.destinationId != id && signalToRead.destinationId != -1) {
+          print('$tick-$id)\t🚦\t\t🛌\t:\tbackoff=${backOff()}');
+        }
+      }
     }
 
     // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
     Signal? signal;
     if (signalToRead != null && (signalToRead.destinationId == id || signalToRead.destinationId == -1)) { // OCCUPIED MEDIUM
       if (signalToRead.type == SignalType.rts) {
-        updateKnowledge(signalToRead.car!);
+        updateKnowledge(signalToRead.car!, tick);
         if (!communication) {
           communication = true;
           enqueuedRtsSender = signalToRead.ownerId;
@@ -95,11 +99,16 @@ class RSU extends Entity{
 
     } // END FREE MEDIUM
 
+    // ---- CLEANUP OLD KNOWLEDGE ----
+    if (tick == SUBFRAMES - 1) {
+      knownCars.clear();
+    }
+
     return signal;
   }
 
-  void updateKnowledge(Car newcar) {
-    knownCars.add(newcar);
+  void updateKnowledge(Car newcar, int tick) {
+    knownCars.add((newcar, tick));
     communicationCar = newcar;
   }
 
@@ -111,7 +120,7 @@ class RSU extends Entity{
     final int cyNext = cy + communicationCar!.position.yVerse;
 
     // iterate once over known cars and look for potential conflicts
-    for (final other in knownCars) {
+    for (final (other, _) in knownCars) {
       if (other.id == communicationCar!.id) continue;
 
       final int ox = other.position.x;
@@ -127,12 +136,5 @@ class RSU extends Entity{
     }
 
     return false;
-  }
-
-
-  int backOff(){
-
-
-    return 0;
   }
 }

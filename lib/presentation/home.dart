@@ -122,7 +122,7 @@ class _MyHomePageState extends State<MyHomePage> {
           }
 
           if (grid[y][x] != 0) {
-            if (rndm.nextDouble() > 0.8 && carPositions.length < 2) {
+            if (rndm.nextDouble() > 0.8 && carPositions.length < 20) {
               if (!carPositions.contains((x, y))) {
                 carPositions.add((x, y));
               }

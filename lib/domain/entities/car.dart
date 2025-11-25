@@ -28,18 +28,16 @@ class Car extends Entity {
       enqueuedStopSender = -1;
       enqueuedCtsSender = -1;
       communication = false;
-      stop = false;
-      free = false;
     }
 
     // ---- SENSING LOGIC ----
     if (signalToRead != null && signalToRead.ownerId != id) { // OCCUPIED MEDIUM
-      if (signalToRead.destinationId != id) {
-        print('$tick-$id)\t🚗\t\t🛌');
-      }
       // NEED TO IMPLEMENT BACKOFF
       timer = 0;
       timer -= backOff();
+      if (signalToRead.destinationId != id) {
+        print('$tick-$id)\t🚗\t\t🛌\t: backoff=${backOff()}');
+      }
     }
 
     // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
@@ -145,11 +143,5 @@ class Car extends Entity {
       case Direction.right:
         return position.movedBy(1, 0);
     }
-  }
-
-  int backOff(){
-
-
-    return 0;
   }
 }
