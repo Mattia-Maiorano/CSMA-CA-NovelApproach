@@ -1,8 +1,8 @@
 // GENERAL
 final int SUBFRAMES = 500;
 
-final int CARNUM = 10;
-final int RSUNUM = 1;
+final int CARNUM = 1;
+final int RSUNUM = 4;
 
 final int DIFS = 40;
 final int SIFS = 10;

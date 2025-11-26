@@ -6,6 +6,7 @@ class Medium {
 
   Signal? sense(int x, int y, int range, int receiverId) {
     Signal? toReturn;
+
     for (var signal in signals) {
       final dx = signal.x - x;
       final dy = signal.y - y;

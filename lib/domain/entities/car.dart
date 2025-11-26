@@ -38,8 +38,6 @@ class Car extends Entity {
     if (nav == 0) {
       timer++;
 
-      print("TIMER $timer AT TICK $tick WITH BACKOFF $backoffSlots AND ENQUEUEDSTOPSENDER $enqueuedStopSender WITH STATUS COMMUNICATION $communication AND WAITING $waiting");
-
       // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
       if (signalToRead != null && signalToRead.destinationId == id) {
         if (signalToRead.type == SignalType.cts) {

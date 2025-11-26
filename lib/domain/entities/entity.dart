@@ -28,11 +28,11 @@ abstract class Entity<T> {
     return position;
   }
 
-  bool sense(Signal? signalToRead, int tick) {
+  void sense(Signal? signalToRead, int tick) {
 
     if (signalToRead != null && signalToRead.ownerId != id) {
       timer = 0;
-
+      print("$tick-$id)\t$emoji\t👁️\t: DETECTED SIGNAL FROM ${signalToRead.ownerId} with current nav $nav");
       if (signalToRead.destinationId != id && !(this is RSU && signalToRead.destinationId == -1)) {
         nav = max(nav, signalToRead.duration);
         print('$tick-$id)\t$emoji\t\t🛌\t: DUE TO ${signalToRead.ownerId}');
@@ -42,8 +42,6 @@ abstract class Entity<T> {
         nav--;
       }
     }
-
-    return false;
   }
 
   bool backoffHelper() {

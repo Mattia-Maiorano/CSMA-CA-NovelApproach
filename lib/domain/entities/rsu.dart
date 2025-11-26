@@ -48,8 +48,10 @@ class RSU extends Entity{
       // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
       if (signalToRead != null && (signalToRead.destinationId == id || signalToRead.destinationId == -1)) { // OCCUPIED MEDIUM
         if (signalToRead.type == SignalType.rts) {
+          print("$tick-$id)\t$emoji\t👁️\t: DETECTED RTS FROM ${signalToRead.ownerId}");
           updateKnowledge(signalToRead.car!, tick);
           if (!communication) {
+            print("$tick-$id)\t$emoji\t\t🛌\t: STARTING COMMUNICATION WITH ${signalToRead.ownerId}");
             communication = true;
             enqueuedRtsSender = signalToRead.ownerId;
             timeout = RESETTIME;
