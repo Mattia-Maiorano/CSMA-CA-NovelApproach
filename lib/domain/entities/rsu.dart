@@ -1,4 +1,3 @@
-import 'dart:math';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/car.dart';
 import 'package:daemon/domain/entities/position.dart';
@@ -16,20 +15,22 @@ class RSU extends Entity{
 
   bool resend = false;
   bool response = false;
-  bool communication = false;
 
-  RSU({required Position position, required int id, required int range, required int sensingRange, required int signalDuration, int timer = 0}) : super(id, position, range, sensingRange, signalDuration, timer);
+  RSU({required Position position, required int id, required int range, required int sensingRange, int timer = 0}) : super(id, position, range, sensingRange, timer){
+    emoji = "🚦";
+  }
 
   Signal? step(int tick, Signal? signalToRead) {
-    
-    timer++;
 
     // ---- RESET COUNTER LOGIC ----
     if (communication && timeout > 0) {
       timeout--;
-    } else {
+    } else if (waiting && timeout == 0) {
+      print("RESETTING RSU $id AT TICK $tick");
+      timer = 0;
       timeout = RESETTIME;
       communicationCar = null;
+      enqueuedPositionSender = -1;
       enqueuedQuerySender = -1;
       enqueuedRtsSender = -1;
       communication = false;
@@ -37,69 +38,70 @@ class RSU extends Entity{
       resend = false;
     }
 
+
     // ---- SENSING LOGIC ----
-    if (timer % SIFS == 0 || timer % DIFS == 0) {
-      if (signalToRead != null && signalToRead.ownerId != id) { // OCCUPIED MEDIUM
-        timer = 0;
-        timer -= backOff();
-        if (signalToRead.destinationId != id && signalToRead.destinationId != -1) {
-          print('$tick-$id)\t🚦\t\t🛌\t:\tbackoff=${backOff()}');
-        }
-      }
-    }
-
-    // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
     Signal? signal;
-    if (signalToRead != null && (signalToRead.destinationId == id || signalToRead.destinationId == -1)) { // OCCUPIED MEDIUM
-      if (signalToRead.type == SignalType.rts) {
-        updateKnowledge(signalToRead.car!, tick);
-        if (!communication) {
-          communication = true;
-          enqueuedRtsSender = signalToRead.ownerId;
-          timeout = RESETTIME;
-        }
-      } else if (signalToRead.data == SignalData.position || resend) {
-          enqueuedQuerySender = signalToRead.ownerId;
-          response = collision();
-          response ? print('RSU $id detects potential collision for Car ${communicationCar!.id} at position ${communicationCar!.position}') : print('No collision detected for ${signalToRead.ownerId}');
-          timeout = RESETTIME;
-      } else if (signalToRead.type == SignalType.ack) {
-        communication = false;
-      }
-    } else if (signalToRead == null) { // FREE MEDIUM
+    sense(signalToRead, tick);
+    if (nav == 0) {
+      timer++;
 
-      // ---- SEND RESPONSES AFTER IFS ----
-      //    send cts
-      if (timer % SIFS == 0 && enqueuedRtsSender != -1) {
+      // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
+      if (signalToRead != null && (signalToRead.destinationId == id || signalToRead.destinationId == -1)) { // OCCUPIED MEDIUM
+        if (signalToRead.type == SignalType.rts) {
+          updateKnowledge(signalToRead.car!, tick);
+          if (!communication) {
+            communication = true;
+            enqueuedRtsSender = signalToRead.ownerId;
+            timeout = RESETTIME;
+          }
+          waiting = false;
+        } else if (signalToRead.type == SignalType.query || resend) {
+            enqueuedQuerySender = signalToRead.ownerId;
+            response = collision();
+            response ? print('RSU $id detects potential collision for Car ${communicationCar!.id} at position ${communicationCar!.position}') : print('No collision detected for ${signalToRead.ownerId}');
+            timeout = RESETTIME;
+            waiting = false;
+        } else if (signalToRead.type == SignalType.ack) {
+          communication = false;
+          waiting = false;
+        }
+      } else if (signalToRead == null && backoffSlots == 0) { // FREE MEDIUM
+
+        // ---- SEND RESPONSES AFTER IFS ----
+        //    send cts
+        if (enqueuedRtsSender != -1) {
+            signal = Signal(
+              type: SignalType.cts,
+              x: position.x,
+              y: position.y,
+              ownerId: id,
+              destinationId: enqueuedRtsSender,
+            );
+            enqueuedRtsSender = -1;
+            waiting = true;
+        //    send stop
+        } else if ((enqueuedQuerySender != -1) || (resend)) {
           signal = Signal(
-            type: SignalType.cts,
-            data: SignalData.ack,
+            type: SignalType.response,
+            data: response ? SignalData.stop : SignalData.free,
             x: position.x,
             y: position.y,
-            duration: signalDuration,
             ownerId: id,
-            destinationId: enqueuedRtsSender,
+            destinationId: enqueuedQuerySender,
           );
-          enqueuedRtsSender = -1;
+          enqueuedQuerySender = -1;
+          resend = false;
+          waiting = true;
+        }
 
-      //    send stop
-      } else if ((enqueuedQuerySender != -1 && timer % SIFS == 0) || (resend && timer % SIFS == 0)) {
-        signal = Signal(
-          type: SignalType.data,
-          data: response ? SignalData.stop : SignalData.free,
-          x: position.x,
-          y: position.y,
-          duration: signalDuration,
-          ownerId: id,
-          destinationId: enqueuedQuerySender,
-        );
-        enqueuedQuerySender = -1;
-        resend = false;
+      } // END FREE MEDIUM LOGIC
+      else {
+        backoffHelper();
       }
-
-    } // END FREE MEDIUM
+    } // END NAV == 0 LOGIC
 
     // ---- CLEANUP OLD KNOWLEDGE ----
+
     if (tick == SUBFRAMES - 1) {
       knownCars.clear();
     }
@@ -121,7 +123,7 @@ class RSU extends Entity{
 
     // iterate once over known cars and look for potential conflicts
     for (final (other, _) in knownCars) {
-      if (other.id == communicationCar!.id) continue;
+      if (other.id == communicationCar!.id || other.stop == true) continue;
 
       final int ox = other.position.x;
       final int oy = other.position.y;

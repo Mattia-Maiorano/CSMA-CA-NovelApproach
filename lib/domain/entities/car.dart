@@ -10,92 +10,98 @@ class Car extends Entity {
   int enqueuedStopSender = -1;
   int enqueuedCtsSender = -1;
 
-  bool communication = false;
   bool stop = false;
   bool free = false;
 
-  Car({required int id, required this.model, required Position position, required this.manhattanGrid, required int range, required int sensingRange, required int signalDuration, int timer = 0}) : super(id, position, range, sensingRange, signalDuration, timer);
+  Car({required int id, required this.model, required Position position, required this.manhattanGrid, required int range, required int sensingRange, int timer = 0}) : super(id, position, range, sensingRange, timer) {
+    emoji = "🚗";
+  }
 
-  (Car, Signal?) step(int tick, Signal? signalToRead) {
-
-    timer++;
+  Signal? step(int tick, Signal? signalToRead) {
 
     // ---- RESET COUNTER LOGIC ----
     if (communication && timeout > 0) {
       timeout--;
-    } else {
+    } else if (waiting && timeout == 0) {
+      print('$tick-$id)\t$emoji\t⏰');
+      timer = 0;
       timeout = RESETTIME;
       enqueuedStopSender = -1;
       enqueuedCtsSender = -1;
       communication = false;
+      waiting = false;
     }
 
     // ---- SENSING LOGIC ----
-    if (signalToRead != null && signalToRead.ownerId != id) { // OCCUPIED MEDIUM
-      // NEED TO IMPLEMENT BACKOFF
-      timer = 0;
-      timer -= backOff();
-      if (signalToRead.destinationId != id) {
-        print('$tick-$id)\t🚗\t\t🛌\t: backoff=${backOff()}');
-      }
-    }
-
-    // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
     Signal? signal;
-    if (signalToRead != null && signalToRead.destinationId == id) {
-      if (signalToRead.type == SignalType.cts) {
-        enqueuedCtsSender = signalToRead.ownerId;
-        timeout = RESETTIME;
-      } else if (signalToRead.data == SignalData.stop || signalToRead.data == SignalData.free) {
-        stop = signalToRead.data == SignalData.stop;
-        free = signalToRead.data == SignalData.free;
-        enqueuedStopSender = signalToRead.ownerId;
-        timeout = RESETTIME;
-      }
-    } else if (signalToRead == null) { // FREE MEDIUM
+    sense(signalToRead, tick);
+    if (nav == 0) {
+      timer++;
 
-      // ---- SEND RESPONSES AFTER IFS ----
-      if (timer % SIFS == 0 && enqueuedStopSender != -1) {
-        signal = Signal(
-          type: SignalType.ack,
-          data: SignalData.ack,
-          x: position.x,
-          y: position.y,
-          duration: signalDuration,
-          ownerId: id,
-          destinationId: enqueuedStopSender,
-        );
-        enqueuedStopSender = -1;
-        communication = false;
-      } else if (enqueuedCtsSender != -1 && timer % SIFS == 0) {
-        signal = Signal(
-          type: SignalType.data,
-          data: SignalData.position,
-          x: position.x,
-          y: position.y,
-          duration: signalDuration,
-          ownerId: id,
-          destinationId: enqueuedCtsSender,
-        );
-        enqueuedCtsSender = -1;
-      } else if (timer % DIFS == 0) {
-        signal = Signal(
-          type: SignalType.rts,
-          data: SignalData.query,
-          x: position.x,
-          y: position.y,
-          duration: signalDuration,
-          ownerId: id,
-          car: this,
-          destinationId: -1, // broadcast
-        );
-        communication = true;
-      }
+      print("TIMER $timer AT TICK $tick WITH BACKOFF $backoffSlots AND ENQUEUEDSTOPSENDER $enqueuedStopSender WITH STATUS COMMUNICATION $communication AND WAITING $waiting");
 
-    } // END FREE MEDIUM LOGIC
+      // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
+      if (signalToRead != null && signalToRead.destinationId == id) {
+        if (signalToRead.type == SignalType.cts) {
+          enqueuedCtsSender = signalToRead.ownerId;
+          timeout = RESETTIME;
+          waiting = false;
+        } else if (signalToRead.data == SignalData.stop || signalToRead.data == SignalData.free) {
+          stop = signalToRead.data == SignalData.stop;
+          free = signalToRead.data == SignalData.free;
+          enqueuedStopSender = signalToRead.ownerId;
+          timeout = RESETTIME;
+          waiting = false;
+        }
+      } else if (signalToRead == null && backoffSlots == 0) { // FREE MEDIUM
+
+        // ---- SEND RESPONSES AFTER IFS ----
+        //    send ack for stop/free
+        if (enqueuedStopSender != -1) {
+          signal = Signal(
+            type: SignalType.ack,
+            x: position.x,
+            y: position.y,
+            ownerId: id,
+            destinationId: enqueuedStopSender,
+          );
+          enqueuedStopSender = -1;
+          waiting = false;
+          communication = false;
+
+        //    send position
+        } else if (enqueuedCtsSender != -1) {
+          signal = Signal(
+            type: SignalType.query,
+            x: position.x,
+            y: position.y,
+            ownerId: id,
+            destinationId: enqueuedCtsSender,
+          );
+          enqueuedCtsSender = -1;
+          waiting = true;
+
+        //    send rts
+        } else if (!communication) {
+          signal = Signal(
+            type: SignalType.rts,
+            x: position.x,
+            y: position.y,
+            ownerId: id,
+            car: this,
+            destinationId: -1, // broadcast
+          );
+          communication = true;
+          waiting = true;
+        }
+
+      } // END FREE MEDIUM LOGIC
+      else {
+        backoffHelper();
+      }
+    } // END NAV == 0 LOGIC
 
     // ---- MOVEMENT LOGIC ----
-    Car newCar = this;
     if (tick % BROADCASTINTERVAL == 0) {
       if (!stop) {
         if (manhattanGrid[position.y][position.x] == 5) {
@@ -113,23 +119,15 @@ class Car extends Entity {
           position.direction = position.newDirection();
           newPosition = moveForward();
         }
-        newCar = Car(
-          id: id,
-          model: model,
-          position: Position(x: newPosition.x, y: newPosition.y, direction: position.direction),
-          manhattanGrid: manhattanGrid,
-          range: range,
-          sensingRange: sensingRange,
-          signalDuration: signalDuration,
-          timer: timer,
-        );
+
+        position = Position(x: newPosition.x, y: newPosition.y, direction: position.direction);
       }
 
       stop = false;
       free = false;
     }
 
-    return (newCar, signal);
+    return signal;
   }
 
   Position moveForward() {

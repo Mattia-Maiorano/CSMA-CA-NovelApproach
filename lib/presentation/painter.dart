@@ -17,11 +17,13 @@ class ScenePainter extends CustomPainter {
     final paintCar = Paint()..color = Colors.blue;
     final paintStoppedCar = Paint()..color = Colors.yellow;
     final paintFreeCar = Paint()..color = Colors.green;
+    final paintCollision = Paint()..color = Colors.black;
     final paintRSU = Paint()..color = Colors.red;
     final paintRSUrange = Paint()
       ..color = Colors.red.withOpacity(0.2)
       ..style = PaintingStyle.fill;
 
+    Set<(int, int)> drawnPositions = {};
     for (final ent in entities) {
       if (ent is RSU) {
         canvas.drawRect(
@@ -29,6 +31,15 @@ class ScenePainter extends CustomPainter {
             paintRSU);
         canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * tileSize, paintRSUrange);
       } else if (ent is Car) {
+
+        bool collision = false;
+        if (drawnPositions.contains((ent.position.x, ent.position.y))) {
+          collision = true;
+        } else {
+          drawnPositions.add((ent.position.x, ent.position.y));
+        }
+
+
         if (ent.stop == true) {
           canvas.drawCircle(
             Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
@@ -39,11 +50,16 @@ class ScenePainter extends CustomPainter {
             Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
             tileSize / 2,
             paintFreeCar);
+        } else if (collision) {
+          canvas.drawCircle(
+            Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
+            tileSize / 2,
+            paintCollision);
         } else {
           canvas.drawCircle(
-              Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
-              tileSize / 2,
-              paintCar);
+            Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
+            tileSize / 2,
+            paintCar);
         }
       }
     }

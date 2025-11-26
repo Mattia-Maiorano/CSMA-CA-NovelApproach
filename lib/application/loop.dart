@@ -143,8 +143,8 @@ class Loop {
           }
         }
 
-        final (updatedCar, signal) = snapshot[i].step(tick, signalToRead);
-        updatedCars.add(updatedCar);
+        final signal = snapshot[i].step(tick, signalToRead);
+        updatedCars.add(snapshot[i]);
         
         if (signal != null) {
           print('$tick-${forCar.id})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');

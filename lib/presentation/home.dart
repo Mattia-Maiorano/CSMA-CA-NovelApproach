@@ -105,7 +105,7 @@ class _MyHomePageState extends State<MyHomePage> {
           } else if (r == 0 && g == 0 && b == 255) {
             // Blue pixel - left road
             grid[y][x] = 4;
-          } else if (r == 100 && g == 0 && b == 0 && _entRepo.items.whereType<RSU>().length < 1) {
+          } else if (r == 100 && g == 0 && b == 0 && _entRepo.items.whereType<RSU>().length < RSUNUM) {
             RSU rsu = RSU(
             id: numRSUs++,
             position: Position(
@@ -115,14 +115,13 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             range: range,
             sensingRange: rsuSensingRange,
-            signalDuration: SIGNALDURATION,
             );
 
             _entRepo.addItem(rsu);
           }
 
           if (grid[y][x] != 0) {
-            if (rndm.nextDouble() > 0.8 && carPositions.length < 20) {
+            if (rndm.nextDouble() > 0.5 && carPositions.length < CARNUM) {
               if (!carPositions.contains((x, y))) {
                 carPositions.add((x, y));
               }
@@ -137,13 +136,12 @@ class _MyHomePageState extends State<MyHomePage> {
         final direction = Direction.values[rndm.nextInt(Direction.values.length)];
 
         Car car = Car(
-          id: _entRepo.items.length + 1,
+          id: _entRepo.items.length,
           model: rndm.nextInt(5),
           position: Position(x: carX, y: carY, direction: direction),
           manhattanGrid: grid,
           range: range,
           sensingRange: carSensingRange,
-          signalDuration: SIGNALDURATION,
           timer: rndm.nextInt(10),
         );
 
