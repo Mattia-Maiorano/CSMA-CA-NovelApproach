@@ -4,7 +4,7 @@ import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/utils/config.dart';
 
-class RSU extends Entity{
+class RSU extends Entity {
 
   Car? communicationCar;
   List<(Car, int)> knownCars = [];
@@ -18,92 +18,50 @@ class RSU extends Entity{
 
   RSU({required Position position, required int id, required int range, required int sensingRange, int timer = 0}) : super(id, position, range, sensingRange, timer){
     emoji = "🚦";
+    waiting = true;
   }
 
   Signal? step(int tick, Signal? signalToRead) {
-
-    // ---- RESET COUNTER LOGIC ----
-    if (communication && timeout > 0) {
-      timeout--;
-    } else if (waiting && timeout == 0) {
-      print("RESETTING RSU $id AT TICK $tick");
-      timer = 0;
-      timeout = RESETTIME;
-      communicationCar = null;
-      enqueuedPositionSender = -1;
-      enqueuedQuerySender = -1;
-      enqueuedRtsSender = -1;
-      communication = false;
-      response = false;
-      resend = false;
+    // ---- RESET / TIMEOUT ----
+    final bool timeoutExpired = consumeTimeoutIfExpired();
+    if (timeoutExpired) {
+      if (consecutiveCollisions >= MAX_BACKOFF_EXPONENT) {
+        connectionState = ConnectionState.idle;
+        print('$tick-$id)\t$emoji\t☠️\t: new state: $connectionState');
+        consecutiveCollisions = 0;
+        communicationCar = null;
+        enqueuedPositionSender = -1;
+        enqueuedQuerySender = -1;
+        enqueuedRtsSender = -1;
+        communication = false;
+        waiting = true;
+        response = false;
+        resend = false;
+      } else {
+        connectionState = previousState();
+        print('$tick-$id)\t$emoji\t⏰\t: new state: $connectionState');
+        consecutiveCollisions++;
+      }
     }
 
-
-    // ---- SENSING LOGIC ----
+    // ---- SENSING / SIGNAL PROCESSING ----
     Signal? signal;
-    sense(signalToRead, tick);
+    final bool forMe = sense(signalToRead, tick);
+    if (forMe) print('RSU $id detected signal FORME at tick $tick (nav=$nav / timer=$timer / backoff=$backoffSlots / timeout=$timeout)');
+
     if (nav == 0) {
       timer++;
 
-      // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
-      if (signalToRead != null && (signalToRead.destinationId == id || signalToRead.destinationId == -1)) { // OCCUPIED MEDIUM
-        if (signalToRead.type == SignalType.rts) {
-          print("$tick-$id)\t$emoji\t👁️\t: DETECTED RTS FROM ${signalToRead.ownerId}");
-          updateKnowledge(signalToRead.car!, tick);
-          if (!communication) {
-            print("$tick-$id)\t$emoji\t\t🛌\t: STARTING COMMUNICATION WITH ${signalToRead.ownerId}");
-            communication = true;
-            enqueuedRtsSender = signalToRead.ownerId;
-            timeout = RESETTIME;
-          }
-          waiting = false;
-        } else if (signalToRead.type == SignalType.query || resend) {
-            enqueuedQuerySender = signalToRead.ownerId;
-            response = collision();
-            response ? print('RSU $id detects potential collision for Car ${communicationCar!.id} at position ${communicationCar!.position}') : print('No collision detected for ${signalToRead.ownerId}');
-            timeout = RESETTIME;
-            waiting = false;
-        } else if (signalToRead.type == SignalType.ack) {
-          communication = false;
-          waiting = false;
-        }
-      } else if (signalToRead == null && backoffSlots == 0) { // FREE MEDIUM
-
-        // ---- SEND RESPONSES AFTER IFS ----
-        //    send cts
-        if (enqueuedRtsSender != -1) {
-            signal = Signal(
-              type: SignalType.cts,
-              x: position.x,
-              y: position.y,
-              ownerId: id,
-              destinationId: enqueuedRtsSender,
-            );
-            enqueuedRtsSender = -1;
-            waiting = true;
-        //    send stop
-        } else if ((enqueuedQuerySender != -1) || (resend)) {
-          signal = Signal(
-            type: SignalType.response,
-            data: response ? SignalData.stop : SignalData.free,
-            x: position.x,
-            y: position.y,
-            ownerId: id,
-            destinationId: enqueuedQuerySender,
-          );
-          enqueuedQuerySender = -1;
-          resend = false;
-          waiting = true;
-        }
-
-      } // END FREE MEDIUM LOGIC
-      else {
+      if (forMe && signalToRead != null) {
+        _handleOccupiedMedium(signalToRead, tick);
+      } else if (signalToRead == null && backoffSlots == 0) {
+        signal = _handleFreeMedium();
+      } else {
         backoffHelper();
       }
-    } // END NAV == 0 LOGIC
+    }
 
     // ---- CLEANUP OLD KNOWLEDGE ----
-
     if (tick == SUBFRAMES - 1) {
       knownCars.clear();
     }
@@ -111,13 +69,94 @@ class RSU extends Entity{
     return signal;
   }
 
+  void _handleOccupiedMedium(Signal signalToRead, int tick) {
+
+    consecutiveCollisions = 0;
+
+    //    receive rts
+    if (signalToRead.type == SignalType.rts && connectionState == ConnectionState.idle) {
+      print('$tick-$id)\t$emoji\t👁️\t: DETECTED RTS FROM ${signalToRead.ownerId} AND COMMUNICATION IS $communication');
+      updateKnowledge(signalToRead.car!, tick);
+      if (!communication) {
+        print('$tick-$id)\t$emoji\t\t🏁\t: STARTING COMMUNICATION WITH ${signalToRead.ownerId}');
+        communication = true;
+        communicationCar = signalToRead.car;
+        enqueuedRtsSender = signalToRead.ownerId;
+        timeout = RESETTIME;
+      }
+
+      waiting = false;
+      connectionState = nextState();
+    }
+    
+    //    receive position (query)
+    else if ((signalToRead.type == SignalType.query || resend) && connectionState == ConnectionState.ctsSent) {
+      enqueuedRtsSender = -1;
+      enqueuedQuerySender = signalToRead.ownerId;
+
+      response = collision();
+      response ? print('RSU $id detects potential collision for Car ${communicationCar!.id} at position ${communicationCar!.position}') : print('No collision detected for ${signalToRead.ownerId}');
+      timeout = RESETTIME;
+      waiting = false;
+      connectionState = nextState();
+    }
+    
+    //    receive ack for stop/free
+    else if (signalToRead.type == SignalType.ack && connectionState == ConnectionState.responseSent) {
+      enqueuedQuerySender = -1;
+      communication = false;
+      waiting = true;
+      connectionState = nextState();
+    }
+
+  }
+
+  Signal? _handleFreeMedium() {
+
+    //    send cts
+    if (enqueuedRtsSender != -1 && connectionState == ConnectionState.rtsReceived) {
+      final s = Signal(
+        type: SignalType.cts,
+        x: position.x,
+        y: position.y,
+        ownerId: id,
+        destinationId: enqueuedRtsSender,
+      );
+
+      waiting = true;
+      timeout = RESETTIME;
+      backoffSlots = -1;
+      connectionState = nextState();
+      return s;
+    }
+
+    //    send stop/free response
+    else if ((enqueuedQuerySender != -1 || resend) && connectionState == ConnectionState.queryReceived) {
+      final s = Signal(
+        type: SignalType.response,
+        data: response ? SignalData.stop : SignalData.free,
+        x: position.x,
+        y: position.y,
+        ownerId: id,
+        destinationId: enqueuedQuerySender,
+      );
+
+      resend = false;
+      waiting = true;
+      timeout = RESETTIME;
+      backoffSlots = -1;
+      connectionState = nextState();
+      return s;
+    }
+
+    return null;
+  }
+
   void updateKnowledge(Car newcar, int tick) {
     knownCars.add((newcar, tick));
-    communicationCar = newcar;
   }
 
   bool collision() {
-    
     final int cx = communicationCar!.position.x;
     final int cy = communicationCar!.position.y;
     final int cxNext = cx + communicationCar!.position.xVerse;

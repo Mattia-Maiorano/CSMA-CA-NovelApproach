@@ -19,113 +19,156 @@ class Car extends Entity {
 
   Signal? step(int tick, Signal? signalToRead) {
 
-    // ---- RESET COUNTER LOGIC ----
-    if (communication && timeout > 0) {
-      timeout--;
-    } else if (waiting && timeout == 0) {
-      print('$tick-$id)\t$emoji\t⏰');
-      timer = 0;
-      timeout = RESETTIME;
-      enqueuedStopSender = -1;
-      enqueuedCtsSender = -1;
-      communication = false;
-      waiting = false;
+    // ---- RESET / TIMEOUT ----
+    final bool timeoutExpired = consumeTimeoutIfExpired();
+    if (timeoutExpired) {
+      if (consecutiveCollisions >= MAX_BACKOFF_EXPONENT) {
+        connectionState = ConnectionState.idle;
+        print('$tick-$id)	$emoji	☠️\t: new state: $connectionState');
+        consecutiveCollisions = 0;
+        enqueuedStopSender = -1;
+        enqueuedCtsSender = -1;
+        communication = false;
+        waiting = false;
+      } else {
+        connectionState = previousState();
+        print('$tick-$id)	$emoji	⏰\t: new state: $connectionState');
+        consecutiveCollisions++;
+      }
     }
 
-    // ---- SENSING LOGIC ----
+    // ---- SENSING / SIGNAL PROCESSING ----
     Signal? signal;
-    sense(signalToRead, tick);
+    final bool forMe = sense(signalToRead, tick);
+
     if (nav == 0) {
       timer++;
 
-      // ---- SIGNAL PROCESSING AND EMISSION LOGIC ----
-      if (signalToRead != null && signalToRead.destinationId == id) {
-        if (signalToRead.type == SignalType.cts) {
-          enqueuedCtsSender = signalToRead.ownerId;
-          timeout = RESETTIME;
-          waiting = false;
-        } else if (signalToRead.data == SignalData.stop || signalToRead.data == SignalData.free) {
-          stop = signalToRead.data == SignalData.stop;
-          free = signalToRead.data == SignalData.free;
-          enqueuedStopSender = signalToRead.ownerId;
-          timeout = RESETTIME;
-          waiting = false;
-        }
-      } else if (signalToRead == null && backoffSlots == 0) { // FREE MEDIUM
-
-        // ---- SEND RESPONSES AFTER IFS ----
-        //    send ack for stop/free
-        if (enqueuedStopSender != -1) {
-          signal = Signal(
-            type: SignalType.ack,
-            x: position.x,
-            y: position.y,
-            ownerId: id,
-            destinationId: enqueuedStopSender,
-          );
-          enqueuedStopSender = -1;
-          waiting = false;
-          communication = false;
-
-        //    send position
-        } else if (enqueuedCtsSender != -1) {
-          signal = Signal(
-            type: SignalType.query,
-            x: position.x,
-            y: position.y,
-            ownerId: id,
-            destinationId: enqueuedCtsSender,
-          );
-          enqueuedCtsSender = -1;
-          waiting = true;
-
-        //    send rts
-        } else if (!communication) {
-          signal = Signal(
-            type: SignalType.rts,
-            x: position.x,
-            y: position.y,
-            ownerId: id,
-            car: this,
-            destinationId: -1, // broadcast
-          );
-          communication = true;
-          waiting = true;
-        }
-
-      } // END FREE MEDIUM LOGIC
-      else {
+      if (forMe && signalToRead != null) {
+        _handleOccupiedMedium(signalToRead);
+      } else if (signalToRead == null && backoffSlots == 0) {
+        signal = _handleFreeMedium();
+      } else {
         backoffHelper();
       }
-    } // END NAV == 0 LOGIC
+    }
 
     // ---- MOVEMENT LOGIC ----
     if (tick % BROADCASTINTERVAL == 0) {
-      if (!stop) {
-        if (manhattanGrid[position.y][position.x] == 5) {
-          position.direction = position.newDirection();
-        }
-
-        Position newPosition = moveForward();
-        int maxRetries = 10;
-        while(manhattanGrid[newPosition.y][newPosition.x] == 0 ||
-              (manhattanGrid[newPosition.y][newPosition.x] != position.direction.index + 1 && manhattanGrid[newPosition.y][newPosition.x] != 5)
-        ) {
-          if (maxRetries-- <= 0) {
-            break;
-          }
-          position.direction = position.newDirection();
-          newPosition = moveForward();
-        }
-
-        position = Position(x: newPosition.x, y: newPosition.y, direction: position.direction);
-      }
-
+      _movementStep();
       stop = false;
       free = false;
     }
 
     return signal;
+  }
+
+  void _handleOccupiedMedium(Signal signalToRead) {
+    if (!attemptedNewCommunicationWhileBusy) {
+      consecutiveCollisions = 0;
+
+      //    receive cts
+      if (signalToRead.type == SignalType.cts && connectionState == ConnectionState.rtsSent) {
+        enqueuedCtsSender = signalToRead.ownerId;
+        timeout = RESETTIME;
+        waiting = false;
+        connectionState = nextState();
+      }
+      
+      //    receive response
+      else if ((signalToRead.data == SignalData.stop || signalToRead.data == SignalData.free) && connectionState == ConnectionState.querySent) {
+        stop = signalToRead.data == SignalData.stop;
+        free = signalToRead.data == SignalData.free;
+        enqueuedCtsSender = -1;
+        enqueuedStopSender = signalToRead.ownerId;
+        timeout = RESETTIME;
+        waiting = false;
+        connectionState = nextState();
+      }
+    }
+  }
+
+  Signal? _handleFreeMedium() {
+
+    print("$id)\t$emoji\t📡\t: MEDIUM FREE, SENDING SIGNAL");
+
+    // send ack for stop/free
+    if (enqueuedStopSender != -1 && connectionState == ConnectionState.responseReceived) {
+      final s = Signal(
+        type: SignalType.ack,
+        x: position.x,
+        y: position.y,
+        ownerId: id,
+        destinationId: enqueuedStopSender,
+      );
+
+      enqueuedStopSender = -1;
+      waiting = false;
+      communication = false;
+      backoffSlots = -1;
+      timeout = RESETTIME;
+      timer = 0;
+      connectionState = nextState();
+      return s;
+    }
+
+    // send position (query)
+    else if (enqueuedCtsSender != -1 && connectionState == ConnectionState.ctsReceived) {
+      final s = Signal(
+        type: SignalType.query,
+        x: position.x,
+        y: position.y,
+        ownerId: id,
+        car: this,
+        destinationId: enqueuedCtsSender,
+      );
+
+      waiting = true;
+      backoffSlots = -1;
+      timeout = RESETTIME;
+      connectionState = nextState();
+      return s;
+    }
+
+    // send rts (start communication)
+    else if (!communication && connectionState == ConnectionState.idle) {
+      final s = Signal(
+        type: SignalType.rts,
+        x: position.x,
+        y: position.y,
+        ownerId: id,
+        car: this,
+        destinationId: -1, // broadcast
+      );
+
+      communication = true;
+      waiting = true;
+      backoffSlots = -1;
+      timeout = RESETTIME;
+      connectionState = nextState();
+      return s;
+    }
+
+    return null;
+  }
+
+  void _movementStep() {
+    if (!stop) {
+      if (manhattanGrid[position.y][position.x] == 5) {
+        position.direction = position.newDirection();
+      }
+
+      Position newPosition = moveForward();
+      int maxRetries = 10;
+      while (manhattanGrid[newPosition.y][newPosition.x] == 0 ||
+          (manhattanGrid[newPosition.y][newPosition.x] != position.direction.index + 1 && manhattanGrid[newPosition.y][newPosition.x] != 5)) {
+        if (maxRetries-- <= 0) break;
+        position.direction = position.newDirection();
+        newPosition = moveForward();
+      }
+
+      position = Position(x: newPosition.x, y: newPosition.y, direction: position.direction);
+    }
   }
 
   Position moveForward() {

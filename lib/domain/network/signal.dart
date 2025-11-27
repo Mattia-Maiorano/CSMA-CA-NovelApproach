@@ -24,7 +24,6 @@ class Signal {
   late int duration;
   
   SignalData ?data;
-  int startTick = 0;
 
   Signal({required this.ownerId, required this.destinationId, required this.x, required this.y, required this.type, this.data, this.car}){
     switch (type){
@@ -50,8 +49,26 @@ class Signal {
     this.data = data;
   }
 
-  void setStartTick(int tick) {
-    startTick = tick;
+  int navTime() {
+    int partial = 0;
+    switch (type){
+      case SignalType.rts:
+        partial = NAVTIMECTS;
+        break;
+      case SignalType.cts:
+        partial = NAVTIMEQUERY;
+        break;
+      case SignalType.query:
+        partial = NAVTIMERESPONSE;
+        break;
+      case SignalType.response:
+        partial = NAVTIMEACK;
+        break;
+      case SignalType.ack:
+        partial = 0;
+        break;
+    }
+    return partial + duration;
   }
 
 }
