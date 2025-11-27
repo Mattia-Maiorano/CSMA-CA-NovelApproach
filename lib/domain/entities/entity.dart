@@ -53,9 +53,9 @@ abstract class Entity<T> {
         } else {
           nav--;
         }
-        print('$tick-$id)\t$emoji\t\t🛌\t: DUE TO ${signalToRead.ownerId}');
+        print('$tick-$id-$connectionState) \t$emoji\t\t🛌\t: DUE TO ${signalToRead.ownerId} -> ${signalToRead.type}');
       } else {
-        if (!waiting && communication) {
+        if (!waiting) {
           attemptedNewCommunicationWhileBusy = true;
         } else {
           return true;
@@ -143,11 +143,7 @@ abstract class Entity<T> {
   ConnectionState previousState() {
     switch (connectionState) {
       case ConnectionState.idle:
-        if (this is RSU){
-          return ConnectionState.responseSent;
-        } else {
-          return ConnectionState.responseReceived;
-        }
+        return ConnectionState.idle; // No previous state
       case ConnectionState.responseSent:
         return ConnectionState.queryReceived;
       case ConnectionState.queryReceived:

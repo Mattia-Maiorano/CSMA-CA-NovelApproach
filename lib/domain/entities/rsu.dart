@@ -47,7 +47,7 @@ class RSU extends Entity {
     // ---- SENSING / SIGNAL PROCESSING ----
     Signal? signal;
     final bool forMe = sense(signalToRead, tick);
-    if (forMe) print('RSU $id detected signal FORME at tick $tick (nav=$nav / timer=$timer / backoff=$backoffSlots / timeout=$timeout)');
+    if (forMe) print('RSU $connectionState-$id detected signal for it at tick $tick (nav=$nav / timer=$timer / backoff=$backoffSlots / timeout=$timeout)');
 
     if (nav == 0) {
       timer++;
@@ -68,14 +68,14 @@ class RSU extends Entity {
 
     return signal;
   }
-
+  
   void _handleOccupiedMedium(Signal signalToRead, int tick) {
 
     consecutiveCollisions = 0;
 
     //    receive rts
     if (signalToRead.type == SignalType.rts && connectionState == ConnectionState.idle) {
-      print('$tick-$id)\t$emoji\t👁️\t: DETECTED RTS FROM ${signalToRead.ownerId} AND COMMUNICATION IS $communication');
+      print('$tick-$id)\t$emoji\t👁️\t: DETECTED RTS FROM ${signalToRead.ownerId} AND COMMUNICATION IS $communication WHILE WAITING $waiting');
       updateKnowledge(signalToRead.car!, tick);
       if (!communication) {
         print('$tick-$id)\t$emoji\t\t🏁\t: STARTING COMMUNICATION WITH ${signalToRead.ownerId}');

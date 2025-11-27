@@ -1,6 +1,6 @@
 // GENERAL
-final int SUBFRAMES = 500;
-final int FPS = 1;
+final int SUBFRAMES = 2000;
+final int FPS = 4;
 
 final int CARNUM = 1;
 final int RSUNUM = 4;
