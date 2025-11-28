@@ -1,21 +1,24 @@
 // GENERAL
-final int SUBFRAMES = 2000;
-final int FPS = 4;
+final int SUBFRAMES = 1000;
+final int FPS = 1;
+final int RANGE = 10;
+final int PROTOCOL = 0; // 0: ClassicProtocol 1: NovelProtocol
 
-final int CARNUM = 1;
+final int CARNUM = 2;
 final int RSUNUM = 4;
 
 final int DIFS = 40;
 final int SIFS = 10;
-final int RESETTIME = 100;
+final int BROADCAST = 200;
+final int RESETTIME = 150; // this has to be > NAVTIME and > MAX BACKOFF TIME
 
-final int BACKOFF_SLOT_TIME = 20;
+final int BACKOFF_SLOT_TIME = 10;
 final int MAX_BACKOFF_EXPONENT = 5;
 
-final int RTSDURATION = 5;
+final int RTSDURATION = 1;
 final int CTSDURATION = 5;
-final int QUERYDURATION = 25;
-final int RESPONSEDURATION = 10;
+final int QUERYDURATION = 7;
+final int RESPONSEDURATION = 7;
 final int ACKDURATION = 5;
 
 final int NAVTIME = RTSDURATION + CTSDURATION + QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 4;
@@ -23,6 +26,3 @@ final int NAVTIMECTS = CTSDURATION + QUERYDURATION + RESPONSEDURATION + ACKDURAT
 final int NAVTIMEQUERY = QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 2;
 final int NAVTIMERESPONSE = RESPONSEDURATION + ACKDURATION + SIFS;
 final int NAVTIMEACK = ACKDURATION;
-
-// CAR
-final int BROADCASTINTERVAL = 10000;

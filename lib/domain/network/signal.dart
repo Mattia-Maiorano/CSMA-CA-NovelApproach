@@ -1,7 +1,8 @@
-import 'package:daemon/domain/entities/car.dart';
+import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/utils/config.dart';
 
 enum SignalType {
+  broken,
   rts,
   cts,
   query,
@@ -42,6 +43,8 @@ class Signal {
       case SignalType.ack:
         duration = ACKDURATION;
         break;
+      case SignalType.broken:
+        duration = DIFS;
     }
   }
 
@@ -50,25 +53,20 @@ class Signal {
   }
 
   int navTime() {
-    int partial = 0;
     switch (type){
       case SignalType.rts:
-        partial = NAVTIMECTS;
-        break;
+        return NAVTIMECTS;
       case SignalType.cts:
-        partial = NAVTIMEQUERY;
-        break;
+        return NAVTIMEQUERY;
       case SignalType.query:
-        partial = NAVTIMERESPONSE;
-        break;
+        return NAVTIMERESPONSE;
       case SignalType.response:
-        partial = NAVTIMEACK;
-        break;
+        return NAVTIMEACK;
       case SignalType.ack:
-        partial = 0;
-        break;
+        return 0;
+      case SignalType.broken:
+        return DIFS;
     }
-    return partial + duration;
   }
 
 }

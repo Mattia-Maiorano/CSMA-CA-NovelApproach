@@ -1,6 +1,6 @@
-import 'package:daemon/domain/entities/car.dart';
+import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/domain/entities/entity.dart';
-import 'package:daemon/domain/entities/rsu.dart';
+import 'package:daemon/domain/entities/classic_rsu.dart';
 import 'package:daemon/domain/network/medium.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:flutter/material.dart';
@@ -29,7 +29,7 @@ class ScenePainter extends CustomPainter {
         canvas.drawRect(
             Rect.fromLTWH(ent.position.x * tileSize, ent.position.y * tileSize, tileSize, tileSize),
             paintRSU);
-        canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * tileSize, paintRSUrange);
+        canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * ent.range as double, paintRSUrange);
       } else if (ent is Car) {
 
         bool collision = false;
@@ -38,7 +38,6 @@ class ScenePainter extends CustomPainter {
         } else {
           drawnPositions.add((ent.position.x, ent.position.y));
         }
-
 
         if (ent.stop == true) {
           canvas.drawCircle(
@@ -61,6 +60,7 @@ class ScenePainter extends CustomPainter {
             tileSize / 2,
             paintCar);
         }
+        canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * ent.range as double, paintRSUrange);
       }
     }
     List<Signal> signals = medium.signals;
@@ -71,7 +71,7 @@ class ScenePainter extends CustomPainter {
         ..strokeWidth = 2.0;
       canvas.drawCircle(
           Offset(signal.x * tileSize + tileSize / 2, signal.y * tileSize + tileSize / 2),
-          signal.duration * tileSize,
+          signal.duration * signal.duration as double,
           paintSignal);
     }
   }

@@ -1,9 +1,9 @@
 import 'dart:async';
 // image storage logic removed
 
-import 'package:daemon/domain/entities/car.dart';
+import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/domain/entities/entity.dart';
-import 'package:daemon/domain/entities/rsu.dart';
+import 'package:daemon/domain/entities/classic_rsu.dart';
 import 'package:daemon/domain/network/medium.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/domain/repositories/base_repo.dart';
@@ -138,7 +138,7 @@ class Loop {
             forCar.id);
         if (signalToRead != null) {
           if (signalToRead.destinationId == forCar.id) {
-            print('$tick-${forCar.id}-${forCar.connectionState}\t)\t🚗\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${forCar.nav}/${forCar.timer}/${forCar.backoffSlots} || ${forCar.timeout}/${forCar.consecutiveCollisions})');
+            // print('$tick-${forCar.id}-${forCar.connectionState})\t🚗\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${forCar.nav}/${forCar.timer}/${forCar.backoffSlots} || ${forCar.timeout}/${forCar.consecutiveCollisions})');
           } else {
           }
         }
@@ -147,7 +147,7 @@ class Loop {
         updatedCars.add(snapshot[i]);
         
         if (signal != null) {
-          print('$tick-${forCar.id}-${forCar.connectionState}\t)\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
+          print('$tick-${forCar.id}-${forCar.connectionState})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
           medium.transmit(signal);
         }
       }
@@ -167,7 +167,7 @@ class Loop {
             rsu.id);
         if (signalToRead != null) {
           if (signalToRead.destinationId == rsu.id || signalToRead.destinationId == -1) {
-            print('$tick-${rsu.id}-${rsu.connectionState}\t)\t🚦\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${rsu.nav}/${rsu.timer}/${rsu.backoffSlots} || ${rsu.timeout}/${rsu.consecutiveCollisions})');
+            // print('$tick-${rsu.id}-${rsu.connectionState})\t🚦\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${rsu.nav}/${rsu.timer}/${rsu.backoffSlots} || ${rsu.timeout}/${rsu.consecutiveCollisions})');
           } else {
 
           }
@@ -176,7 +176,7 @@ class Loop {
         final signal = rsu.step(tick, signalToRead);
 
         if (signal != null) {
-          print('$tick-${rsu.id}-${rsu.connectionState}\t)\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
+          print('$tick-${rsu.id}-${rsu.connectionState})\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
           medium.transmit(signal);
         }
       }

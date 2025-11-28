@@ -15,7 +15,7 @@ class Medium {
         if (toReturn == null) {
           toReturn = signal;
         } else {
-          return null;
+          return Signal(ownerId: -1, destinationId: -2, x: -1, y: -1, type: SignalType.broken);
         }
       }
     }

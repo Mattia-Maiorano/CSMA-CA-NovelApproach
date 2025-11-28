@@ -1,165 +1,137 @@
-import 'dart:math';
-
 import 'package:daemon/domain/entities/position.dart';
-import 'package:daemon/domain/entities/rsu.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/utils/config.dart';
 
-enum ConnectionState {
+enum NodeState {
   idle,
-  rtsSent, rtsReceived,
-  ctsSent, ctsReceived,
-  querySent, queryReceived,
-  responseSent, responseReceived,
+  sleeping,
+  waiting,
+  querying,
+}
+
+enum TalkingStage {
+  idle,
+  rts,
+  cts,
+  query,
+  response,
+  ack,
 }
 
 abstract class Entity<T> {
   final int id;
   final int range;
   final int sensingRange;
-
   Position position;
-  ConnectionState connectionState = ConnectionState.idle;
 
-  Signal? lastSeenSignal;
+  NodeState state = NodeState.idle;
+  TalkingStage stage = TalkingStage.idle;
+
   String emoji = "❓";
 
-  bool communication = false;
-  bool waiting = false;
-  bool attemptedNewCommunicationWhileBusy = false;
+  bool requestedSend = false;
+  bool confirmedSend = false;
+  bool queuedReceive = false;
+  bool queuedSleep = false;
+  bool queuedWake = false;
+  bool requestedExit = false;
+  bool backoffExpired = false;
 
+  int ifsTimer = 0;
   int nav = 0;
-  int timer = 0;
-  int backoffSlots = -1;
-  int timeout = RESETTIME;
+  int pal = -1;
   int consecutiveCollisions = 0;
-  int lastNodeID = -1;
-  Random random = Random();
+  int backoffSlots = -1;
+  int timeout = 0;
 
-  Entity(this.id, this.position, this.range, this.sensingRange, this.timer);
+  Entity(this.id, this.position, this.range, this.sensingRange, this.ifsTimer);
 
-  Position getPosition() {
-    return position;
+  Signal? step(int tick, Signal? signalToRead) {
+
+    Signal? signal;
+
+    // STATE MACHINE
+    handleState(tick);
+    handleStage(tick);
+
+    // TIMING HANDLING
+    handleTimers();
+
+    // SIGNAL HANDLING
+    handleSignal(tick, signalToRead);
+    signal = handleResponse();
+
+    specificStep(tick);
+
+    return signal;
   }
 
-  bool sense(Signal? signalToRead, int tick) {
+  void specificStep(int tick);
 
-    if (signalToRead != null && signalToRead.ownerId != id) {
-      timer = 0;
-      if (signalToRead.destinationId != id && !(this is RSU && signalToRead.destinationId == -1)) {
-        if (signalToRead != lastSeenSignal) {
-          lastSeenSignal = signalToRead;
-          nav = signalToRead.navTime();
-        } else {
-          nav--;
-        }
-        print('$tick-$id-$connectionState) \t$emoji\t\t🛌\t: DUE TO ${signalToRead.ownerId} -> ${signalToRead.type}');
-      } else {
-        if (!waiting) {
-          attemptedNewCommunicationWhileBusy = true;
-        } else {
-          return true;
-        }
-      }
-    } else {
-      if (nav > 0) {
-        nav--;
-      }
-    }
+  void handleState(int tick);
 
-    return false;
+  void handleStage(int tick);
+
+  void handleSignal(int tick, Signal? signalToRead);
+
+  Signal? handleResponse();
+
+  void handleTimers();
+
+  void nextState(NodeState newState) {
+    state = newState;
   }
 
-  bool backoffHelper() {
-    if (backoffSlots == -1) {
-        if (!communication || consecutiveCollisions != 0) {
-            if (timer == DIFS) {
-              backoffSlots = backOff();
-            }
-        } else if (timer == SIFS) {
-          backoffSlots = backOff();
-        }
-        return false;
-    } else if (backoffSlots > 0) {
-      backoffSlots--;
-      return false;
-    } else {
-      backoffSlots = -1;
-      return true;
+  void switchState() {
+    if (state == NodeState.querying) {
+      state = NodeState.waiting;
+    } else if (state == NodeState.waiting) {
+      state = NodeState.querying;
     }
   }
 
-  int backOff() {
-    int k = min(consecutiveCollisions + 1, MAX_BACKOFF_EXPONENT);
-    int r = random.nextInt(1 << k);
-    print('$id)\t$emoji\t⏱️\t: BACKOFF SLOTS SET TO $r (k=$k)');
-    return r * BACKOFF_SLOT_TIME;
+  void nextStage(TalkingStage newStage) {
+    stage = newStage;
   }
 
-  /// Decrement timeout and return true if a communication timeout just expired.
-  /// Subclasses should call this at the start of their `step` and handle
-  /// consequences (collision count, state reset) themselves because actions
-  /// differ between `Car` and `RSU`.
-  bool consumeTimeoutIfExpired() {
-    attemptedNewCommunicationWhileBusy = false;
-    if (communication && timeout > 0) {
-      timeout--;
-      return false;
-    } else if (communication && timeout == 0) {
-      timer = 0;
-      timeout = RESETTIME;
-      return true;
-    }
-    return false;
+  Signal? send() {
+    return null;
   }
 
-  ConnectionState nextState() {
-    switch(connectionState) {
-      case ConnectionState.idle:
-        if (this is RSU){
-          return ConnectionState.rtsReceived;
-        } else {
-          return ConnectionState.rtsSent;
-        }
-      case ConnectionState.rtsReceived:
-        return ConnectionState.ctsSent;
-      case ConnectionState.ctsSent:
-        return ConnectionState.queryReceived;
-      case ConnectionState.queryReceived:
-        return ConnectionState.responseSent;
-      case ConnectionState.responseSent:
-        return ConnectionState.idle;
-      case ConnectionState.rtsSent:
-        return ConnectionState.ctsReceived;
-      case ConnectionState.ctsReceived:
-        return ConnectionState.querySent;
-      case ConnectionState.querySent:
-        return ConnectionState.responseReceived;
-      case ConnectionState.responseReceived:
-        return ConnectionState.idle;
-    }
+  void reset() {
+    ifsTimer = 0;
+    state = NodeState.idle;
+    stage = TalkingStage.idle;
+    requestedSend = false;
+    confirmedSend = false;
+    queuedReceive = false;
+    queuedSleep = false;
+    queuedWake = false;
+    requestedExit = false;
+    backoffExpired = false;
+    nav = 0;
+    pal = -1;
+    consecutiveCollisions = 0;
+    backoffSlots = -1;
+    timeout = 0;
   }
 
-  ConnectionState previousState() {
-    switch (connectionState) {
-      case ConnectionState.idle:
-        return ConnectionState.idle; // No previous state
-      case ConnectionState.responseSent:
-        return ConnectionState.queryReceived;
-      case ConnectionState.queryReceived:
-        return ConnectionState.ctsSent;
-      case ConnectionState.ctsSent:
-        return ConnectionState.rtsReceived;
-      case ConnectionState.rtsReceived:
-        return ConnectionState.idle;
-      case ConnectionState.responseReceived:
-        return ConnectionState.querySent;
-      case ConnectionState.querySent:
-        return ConnectionState.ctsReceived;
-      case ConnectionState.ctsReceived:
-        return ConnectionState.rtsSent;
-      case ConnectionState.rtsSent:
-        return ConnectionState.idle;
+  void softReset();
+
+  int getNav(SignalType type) {
+    switch (type) {
+      case SignalType.rts:
+        return NAVTIME;
+      case SignalType.cts:
+        return NAVTIMECTS;
+      case SignalType.query:
+        return NAVTIMEQUERY;
+      case SignalType.response:
+        return NAVTIMERESPONSE;
+      case SignalType.ack:
+        return NAVTIMEACK;
+      default:
+        return 0;
     }
   }
 }

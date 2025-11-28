@@ -6,9 +6,9 @@ import 'package:daemon/data/repo_view.dart';
 import 'package:daemon/domain/network/medium.dart';
 import 'package:daemon/domain/repositories/base_repo.dart';
 import 'package:daemon/application/loop.dart';
-import 'package:daemon/domain/entities/car.dart';
+import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/domain/entities/entity.dart';
-import 'package:daemon/domain/entities/rsu.dart';
+import 'package:daemon/domain/entities/classic_rsu.dart';
 import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/utils/config.dart';
 
@@ -41,11 +41,12 @@ class _MyHomePageState extends State<MyHomePage> {
   final int fps = FPS;
   final int subFrames = 250000;
   final double tileSize = 20;
-  final int range = 5;
+  final int range = RANGE;
   final int carFrameUpdateInterval = 9;
   final int rsuFrameUpdateInterval = 9;
   final int carSensingRange = 3;
   final int rsuSensingRange = 3;
+
   int gridWidth = 0;
   int gridHeight = 0;
   List<List<int>> grid = [];
@@ -120,6 +121,7 @@ class _MyHomePageState extends State<MyHomePage> {
             _entRepo.addItem(rsu);
           }
 
+          /*
           if (grid[y][x] != 0) {
             if (rndm.nextDouble() > 0.5 && carPositions.length < CARNUM) {
               if (!carPositions.contains((x, y))) {
@@ -127,13 +129,25 @@ class _MyHomePageState extends State<MyHomePage> {
               }
             }
           }
+          */
         }
       }
 
       // --- INSTANTIATE CARS ---
+      // uncomment for debug
+      carPositions = [
+        (16, 15),
+        (22,15)
+      ];
+      List<Direction> directions = [
+        Direction.right,
+        Direction.left
+      ];
+      int index = 0;
       for (final pos in carPositions) {
         final (carX, carY) = pos;
-        final direction = Direction.values[rndm.nextInt(Direction.values.length)];
+        // final direction = Direction.values[rndm.nextInt(Direction.values.length)];
+        final direction = directions[index++];
 
         Car car = Car(
           id: _entRepo.items.length,
