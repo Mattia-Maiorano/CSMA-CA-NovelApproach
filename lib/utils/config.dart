@@ -1,10 +1,10 @@
 // GENERAL
-final int SUBFRAMES = 1000;
+final int SUBFRAMES = 500;
 final int FPS = 1;
 final int RANGE = 10;
 final int PROTOCOL = 0; // 0: ClassicProtocol 1: NovelProtocol
 
-final int CARNUM = 2;
+final int CARNUM = 1;
 final int RSUNUM = 4;
 
 final int DIFS = 40;
@@ -12,6 +12,7 @@ final int SIFS = 10;
 final int BROADCAST = 200;
 final int RESETTIME = 150; // this has to be > NAVTIME and > MAX BACKOFF TIME
 
+final int STARTING_EXPONENT = 0;
 final int BACKOFF_SLOT_TIME = 10;
 final int MAX_BACKOFF_EXPONENT = 5;
 

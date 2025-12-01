@@ -37,6 +37,11 @@ void specificStep(int tick) {
       timeout = 0;
       nextState(NodeState.querying);
     }
+
+    //    COLLISION HANDLING
+    else if (state == NodeState.collision && lastReachedStage == stage) {
+      restoreState();
+    }
     
     //    SLEEP/WAKE CONDITIONS
     else if (queuedSleep) {
@@ -61,7 +66,7 @@ void specificStep(int tick) {
     }
 
     //    EXIT CONDITIONS
-    else if (state == NodeState.querying && requestedExit) {
+    else if (requestedExit) {
       timeout = 0;
       nextState(NodeState.idle);
       requestedExit = false;
@@ -70,43 +75,47 @@ void specificStep(int tick) {
   }
 
   @override
-  void handleStage(int tick) {
-    
-    if (state == NodeState.querying) {
-      if (stage == TalkingStage.idle && ifsTimer == DIFS) {
-        requestedSend = true;
-        stage = TalkingStage.rts;
-      } else if (stage == TalkingStage.cts && ifsTimer == SIFS) {
-        requestedSend = true;
-        stage = TalkingStage.query;
-      } else if (stage == TalkingStage.response && ifsTimer == SIFS) {
-        requestedSend = true;
-        stage = TalkingStage.ack;
+  void handleTimers() {
+
+    if (nav > 0) {
+      nav--;
+
+      if (nav == 0) print('$id-$state)\t$emoji\t⏰​\t: nav expired');
+
+    } else if (requestedSend) {
+      ifsTimer = 0;
+
+      if (backoffSlots == -1) {
+        backoffSlots = Random().nextInt((2 << consecutiveCollisions) - 1);
+      } else if (backoffSlots > 0) {
+        backoffSlots--;
+      } else {
+        backoffSlots = -1;
+        backoffExpired = true;
       }
+    } else if (state == NodeState.querying){
+      ifsTimer++;
     }
 
-    else {
-      if (queuedReceive) {
-        if (stage == TalkingStage.rts) {
-          stage = TalkingStage.cts;
-        } else if (stage == TalkingStage.query) {
-          stage = TalkingStage.response;
-        } else if (stage == TalkingStage.ack) {
-          stage = TalkingStage.idle;
-          requestedExit = true;
-        }
+    else if (timeout >= RESETTIME) {
+      if (consecutiveCollisions < MAX_BACKOFF_EXPONENT) {
+        softReset();
+      } else {
+        reset();
       }
+      timeout = 0;
+    } else {
+      timeout++;
     }
-
   }
 
   @override
   void handleSignal(int tick, Signal? signalToRead) {
     if (signalToRead != null) {
-      
-      if (validateSignal(signalToRead)) {
-        
-        queuedReceive = true;
+
+      if (state != NodeState.querying && validateSignal(signalToRead)) {
+
+        requestedQueueReceive = true;
         pal = signalToRead.ownerId;
         ifsTimer = 0;
         
@@ -117,19 +126,29 @@ void specificStep(int tick) {
             free = true;
           }
         }
-      } else {
+      } else if (signalToRead.type == SignalType.broken) {
+      } else if (signalToRead.communicationOngoing && lastSeenSignal != signalToRead && signalToRead.ownerId != id) {
+        lastSeenSignal = signalToRead;
         nav = max(nav, getNav(signalToRead.type));
+        reset(resetNav: false);
+        print('$tick-$id-$state)\t$emoji\t💤​\t: new nav -> $nav');
+      } else if (requestedQueueReceive) {
+        queuedReceive = true;
+        requestedQueueReceive = false;
       }
 
+    } else {
+      if (requestedQueueReceive) queuedReceive = true;
+      requestedQueueReceive = false;
     }
   }
 
   bool validateSignal(Signal signal) {
 
-    if (signal.destinationId == id && state == NodeState.waiting) {
-      if (signal.type == SignalType.cts && stage == TalkingStage.cts) {
+    if (signal.destinationId == id && (signal.ownerId == pal || pal == -1) && (state == NodeState.waiting || state == NodeState.collision)) {
+      if (signal.type == SignalType.cts && stage == TalkingStage.rts) {
         return true;
-      } else if (signal.type == SignalType.response && stage == TalkingStage.response) {
+      } else if (signal.type == SignalType.response && stage == TalkingStage.query) {
         return true;
       }
     }
@@ -142,7 +161,8 @@ void specificStep(int tick) {
 
     if (requestedSend && backoffExpired) {
 
-      if (stage == TalkingStage.rts) {
+      if (stage == TalkingStage.idle) {
+        stage = TalkingStage.rts;
         requestedSend = false;
         confirmedSend = true;
 
@@ -153,7 +173,8 @@ void specificStep(int tick) {
           y: position.y,
           type: SignalType.rts,
         );
-      } else if (stage == TalkingStage.query) {
+      } else if (stage == TalkingStage.cts) {
+        stage = TalkingStage.query;
         requestedSend = false;
         confirmedSend = true;
 
@@ -164,6 +185,20 @@ void specificStep(int tick) {
           y: position.y,
           type: SignalType.query,
           car: this,
+          communicationOngoing: true,
+        );
+      } else if (stage == TalkingStage.response) {
+        stage = TalkingStage.ack;
+        requestedSend = false;
+        requestedExit = true;
+
+        return Signal(
+          ownerId: id,
+          destinationId: pal,
+          x: position.x,
+          y: position.y,
+          type: SignalType.ack,
+          communicationOngoing: true,
         );
       }
     }
@@ -172,43 +207,44 @@ void specificStep(int tick) {
   }
 
   @override
-  void handleTimers() {
-    timeout++;
-
-    if (nav > 0) {
-      nav--;
-    } else if (requestedSend) {
-      ifsTimer = 0;
-
-      if (backoffSlots == -1) {
-        backoffSlots = Random().nextInt(2 >> consecutiveCollisions);
-      } else if (backoffSlots > 0) {
-        backoffSlots--;
-      } else {
-        backoffSlots = -1;
-        backoffExpired = true;
-      }
-    } else {
-      ifsTimer++;
-    }
-
-    if (timeout >= RESETTIME) {
-      if (consecutiveCollisions < MAX_BACKOFF_EXPONENT) {
-        softReset();
-      } else {
-        reset();
+  void handleStage(int tick) {
+    
+    if (state == NodeState.querying) {
+      if (stage == TalkingStage.idle && ifsTimer == DIFS) {
+        requestedSend = true;
+      } else if (stage == TalkingStage.cts && ifsTimer == SIFS) {
+        requestedSend = true;
+      } else if (stage == TalkingStage.response && ifsTimer == SIFS) {
+        requestedSend = true;
       }
     }
+
+    else {
+      if (queuedReceive) {
+        if (stage == TalkingStage.rts) {
+          stage = TalkingStage.cts;
+        } else if (stage == TalkingStage.query) {
+          stage = TalkingStage.response;
+        }
+      } else if (stage == TalkingStage.ack) {
+        stage = TalkingStage.idle;
+        requestedExit = true;
+      }
+    }
+
   }
 
   @override
   softReset() {
-    consecutiveCollisions++;
-    switchState();
-    requestedSend = false;
-    confirmedSend = false;
-    queuedReceive = false;
-    ifsTimer = 0;
+    if (state == NodeState.waiting) {
+      enterCollisionHandling();
+      requestedSend = true;
+      confirmedSend = false;
+      queuedReceive = false;
+      backoffSlots = -1;
+      backoffExpired = false;
+      ifsTimer = 0;
+    }
   }
 
   void _movementStep() {

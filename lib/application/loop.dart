@@ -147,7 +147,7 @@ class Loop {
         updatedCars.add(snapshot[i]);
         
         if (signal != null) {
-          print('$tick-${forCar.id}-${forCar.connectionState})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
+          print('$tick-${forCar.id}-${forCar.state})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
           medium.transmit(signal);
         }
       }
@@ -176,7 +176,7 @@ class Loop {
         final signal = rsu.step(tick, signalToRead);
 
         if (signal != null) {
-          print('$tick-${rsu.id}-${rsu.connectionState})\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
+          print('$tick-${rsu.id}-${rsu.state})\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
           medium.transmit(signal);
         }
       }

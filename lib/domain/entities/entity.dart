@@ -1,12 +1,14 @@
 import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/utils/config.dart';
+import 'package:image/image.dart';
 
 enum NodeState {
   idle,
   sleeping,
   waiting,
   querying,
+  collision,
 }
 
 enum TalkingStage {
@@ -31,6 +33,7 @@ abstract class Entity<T> {
 
   bool requestedSend = false;
   bool confirmedSend = false;
+  bool requestedQueueReceive = false;
   bool queuedReceive = false;
   bool queuedSleep = false;
   bool queuedWake = false;
@@ -40,27 +43,33 @@ abstract class Entity<T> {
   int ifsTimer = 0;
   int nav = 0;
   int pal = -1;
-  int consecutiveCollisions = 0;
+  int consecutiveCollisions = STARTING_EXPONENT;
   int backoffSlots = -1;
   int timeout = 0;
+
+  Signal? lastSeenSignal;
+  TalkingStage? lastReachedStage;
+  NodeState? lastReachedState;
 
   Entity(this.id, this.position, this.range, this.sensingRange, this.ifsTimer);
 
   Signal? step(int tick, Signal? signalToRead) {
 
+    if (id == 4) print("");
+
     Signal? signal;
 
     // STATE MACHINE
     handleState(tick);
-    handleStage(tick);
 
     // TIMING HANDLING
     handleTimers();
 
     // SIGNAL HANDLING
     handleSignal(tick, signalToRead);
-    signal = handleResponse();
+    if (state == NodeState.querying || state == NodeState.collision) signal = handleResponse();
 
+    handleStage(tick);
     specificStep(tick);
 
     return signal;
@@ -82,6 +91,14 @@ abstract class Entity<T> {
     state = newState;
   }
 
+  void enterCollisionHandling() {
+    lastReachedStage = stage;
+    lastReachedState = state;
+    previousStage();
+    state = NodeState.collision;
+    consecutiveCollisions++;
+  }
+
   void switchState() {
     if (state == NodeState.querying) {
       state = NodeState.waiting;
@@ -94,11 +111,18 @@ abstract class Entity<T> {
     stage = newStage;
   }
 
+  void restoreState() {
+    if (lastReachedState != null) {
+      state = lastReachedState!;
+      if (state == NodeState.waiting) confirmedSend = false;
+    }
+  }
+
   Signal? send() {
     return null;
   }
 
-  void reset() {
+  void reset({bool resetNav = true}) {
     ifsTimer = 0;
     state = NodeState.idle;
     stage = TalkingStage.idle;
@@ -109,14 +133,28 @@ abstract class Entity<T> {
     queuedWake = false;
     requestedExit = false;
     backoffExpired = false;
-    nav = 0;
     pal = -1;
-    consecutiveCollisions = 0;
+    consecutiveCollisions = STARTING_EXPONENT;
     backoffSlots = -1;
     timeout = 0;
+    lastSeenSignal = null;
+    requestedQueueReceive = false;
+    if (resetNav) nav = 0;
   }
 
   void softReset();
+
+  void previousStage() {
+    if (stage == TalkingStage.rts) {
+      stage = TalkingStage.idle;
+    } else if (stage == TalkingStage.cts) {
+      stage = TalkingStage.rts;
+    } else if (stage == TalkingStage.query) {
+      stage = TalkingStage.cts;
+    } else if (stage == TalkingStage.response) {
+      stage = TalkingStage.query;
+    }
+  }
 
   int getNav(SignalType type) {
     switch (type) {
