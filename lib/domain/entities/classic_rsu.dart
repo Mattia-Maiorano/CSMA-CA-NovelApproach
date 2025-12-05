@@ -5,6 +5,7 @@ import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/utils/config.dart';
+import 'package:daemon/utils/measurement.dart';
 
 class RSU extends Entity {
 
@@ -12,22 +13,27 @@ class RSU extends Entity {
   Set<(Car, int)> knownCars = {};
 
 
-  RSU({required Position position, required int id, required int range, required int sensingRange, int timer = 0}) : super(id, position, range, sensingRange, timer) {
+  RSU({required Position position, required int id, required int range, required int sensingRange, int timer = 0, super.analyzer}) : super(id, position, range, sensingRange, timer) {
     emoji = "🚦";
   }
 
   @override
-  void specificStep(int tick) {
+  Measurement specificStep() {
 
     // ---- CLEANUP OLD KNOWLEDGE ----
     if (tick == SUBFRAMES - 1) {
-      //knownCars.clear();
+      for (final (car, t) in knownCars.toList()) {
+        if (tick + frame * SUBFRAMES - t > PRUNECARS) {
+          knownCars.remove((car, t));
+        }
+      }
     }
 
+    return Measurement(state: state, stage: stage, free: false, answered: requestedExit, softReset: softRst, hardReset: hardRst);
   }
   
   @override
-  void handleState(int tick) {
+  void handleState() {
 
     //    COLLISION HANDLING
     if (state == NodeState.collision && lastReachedStage == stage) {
@@ -64,37 +70,52 @@ class RSU extends Entity {
     }
 
   }
-  
+
   @override
-  void handleStage(int tick) {
+  void handleTimers() {
+    if (nav > 0) {
+      nav--;
 
-    if (state == NodeState.querying || state == NodeState.collision) {
-      if (stage == TalkingStage.cts && ifsTimer == SIFS) {
-        requestedSend = true;
-      } else if (stage == TalkingStage.response && ifsTimer == SIFS) {
-        requestedSend = true;
+      if (nav == 0) print('$tick-$id-$state)\t$emoji\t⏰​\t: nav expired');
+
+    } else if (requestedSend) {
+      ifsTimer = 0;
+
+      if (backoffSlots == -1) {
+        backoffSlots = Random().nextInt((2 << consecutiveCollisions) - 1);
+      } else if (backoffSlots > 0) {
+        backoffSlots--;
+      } else {
+        backoffSlots = -1;
+        backoffExpired = true;
       }
+    } else if (state == NodeState.querying){
+      ifsTimer++;
     }
 
-    else {
-      if (queuedReceive) {
-        if (stage == TalkingStage.idle || stage == TalkingStage.rts) {
-          stage = TalkingStage.cts;
-        } else if (stage == TalkingStage.query) {
-          stage = TalkingStage.response;
-        } else if (stage == TalkingStage.ack) {
-          stage = TalkingStage.idle;
-          requestedExit = true;
-        }
+    if (timeout >= RESETTIME) {
+      if (consecutiveCollisions < MAX_BACKOFF_EXPONENT) {
+        softReset();
+        softRst = true;
+      } else {
+        reset();
+        hardRst = true;
       }
+      timeout = 0;
+    } else {
+      timeout++;
     }
-
   }
 
   @override
-  void handleSignal(int tick, Signal? signalToRead) {
+  void handleSignal(Signal? signalToRead) {
 
     if (signalToRead != null) {
+
+      if (signalToRead.car != null) {
+        communicationCar = signalToRead.car;
+        updateKnowledge(signalToRead.car!);
+      }
 
       if (state != NodeState.querying && validateSignal(signalToRead)) {
 
@@ -102,12 +123,6 @@ class RSU extends Entity {
         pal = signalToRead.ownerId;
         ifsTimer = 0;
         
-        if (signalToRead.type == SignalType.query) {
-          if (signalToRead.car != null) {
-            communicationCar = signalToRead.car;
-            updateKnowledge(signalToRead.car!, tick);
-          }
-        }
       } else if (signalToRead.type == SignalType.broken) {
       } else if (signalToRead.communicationOngoing && lastSeenSignal != signalToRead && signalToRead.ownerId != id) {
         lastSeenSignal = signalToRead;
@@ -147,18 +162,21 @@ class RSU extends Entity {
         requestedSend = false;
         confirmedSend = true;
 
+        final txRange = range;
         return Signal(
           ownerId: id,
           destinationId: pal,
           x: position.x,
           y: position.y,
           type: SignalType.cts,
+          txRange: txRange,
         );
       } else if (stage == TalkingStage.response) {
         stage = TalkingStage.ack;
         requestedSend = false;
         confirmedSend = true;
 
+        final txRange = range;
         return Signal(
           ownerId: id,
           destinationId: pal,
@@ -167,50 +185,44 @@ class RSU extends Entity {
           type: SignalType.response,
           data: collision() ? SignalData.stop : SignalData.free,
           communicationOngoing: true,
+          txRange: txRange,
         );
       }
     }
 
     return null;
   }
-
+  
   @override
-  void handleTimers() {
+  void handleStage() {
 
-    if (nav > 0) {
-      nav--;
-
-      if (nav == 0) print('$id-$state)\t$emoji\t⏰​\t: nav expired');
-
-    } else if (requestedSend) {
-      ifsTimer = 0;
-
-      if (backoffSlots == -1) {
-        backoffSlots = Random().nextInt((2 << consecutiveCollisions) - 1);
-      } else if (backoffSlots > 0) {
-        backoffSlots--;
-      } else {
-        backoffSlots = -1;
-        backoffExpired = true;
+    if (state == NodeState.querying || state == NodeState.collision) {
+      if (stage == TalkingStage.cts && ifsTimer == SIFS) {
+        requestedSend = true;
+      } else if (stage == TalkingStage.response && ifsTimer == SIFS) {
+        requestedSend = true;
       }
-    } else if (state == NodeState.querying){
-      ifsTimer++;
     }
 
-    else if (timeout >= RESETTIME) {
-      if (consecutiveCollisions < MAX_BACKOFF_EXPONENT) {
-        softReset();
-      } else {
-        reset();
+    else {
+      if (queuedReceive) {
+        if (stage == TalkingStage.idle || stage == TalkingStage.rts) {
+          stage = TalkingStage.cts;
+        } else if (stage == TalkingStage.query) {
+          stage = TalkingStage.response;
+        } else if (stage == TalkingStage.ack) {
+          stage = TalkingStage.idle;
+          requestedExit = true;
+        }
       }
-      timeout = 0;
-    } else {
-      timeout++;
     }
+
   }
 
   @override
   void softReset() {
+
+    if (state != NodeState.waiting) print("$tick-$id-$state)\t$emoji\t💥​\t: collision detected, no handling");
     if (state == NodeState.waiting) {
       enterCollisionHandling();
       requestedSend = true;
@@ -222,11 +234,11 @@ class RSU extends Entity {
     }
   }
   
-  void updateKnowledge(Car newcar, int tick) {
+  void updateKnowledge(Car newcar) {
     if (knownCars.any((entry) => entry.$1.id == newcar.id)) {
-      knownCars = knownCars.map((entry) => entry.$1.id == newcar.id ? (entry.$1, tick) : entry).toSet();
+      knownCars = knownCars.map((entry) => entry.$1.id == newcar.id ? (entry.$1, tick + frame * SUBFRAMES) : entry).toSet();
     } else {
-    knownCars.add((newcar, tick));
+      knownCars.add((newcar, tick + frame * SUBFRAMES));
     }
   }
 

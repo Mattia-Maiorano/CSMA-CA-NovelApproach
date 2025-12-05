@@ -23,11 +23,12 @@ class Signal {
   final Car? car;
   final SignalType type;
   final bool communicationOngoing;
+  final int txRange; // Transmission range in tiles
   late int duration;
   
   SignalData ?data;
 
-  Signal({required this.ownerId, required this.destinationId, required this.x, required this.y, required this.type, this.communicationOngoing = false, this.data, this.car}){
+  Signal({required this.ownerId, required this.destinationId, required this.x, required this.y, required this.type, this.communicationOngoing = false, this.data, this.car, this.txRange = 0}){
     switch (type){
       case SignalType.rts:
         duration = RTSDURATION;

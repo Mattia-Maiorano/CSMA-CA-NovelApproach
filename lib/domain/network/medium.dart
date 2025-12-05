@@ -11,7 +11,9 @@ class Medium {
       final dx = signal.x - x;
       final dy = signal.y - y;
       final distanceSquared = dx * dx + dy * dy;
-      if (distanceSquared <= range * range) {
+      // The transmitter's txRange may limit reception as well; if not specified, default to receiver range
+      final txRange = signal.txRange > 0 ? signal.txRange : range;
+      if (distanceSquared <= txRange * txRange && distanceSquared <= range * range) {
         if (toReturn == null) {
           toReturn = signal;
         } else {
@@ -35,5 +37,15 @@ class Medium {
 
     signals.addAll(queuedSignals);
     queuedSignals.clear();
+  }
+
+  void getSignalsInfo() {
+    print("");
+    print("-------- Signals in Medium -------");
+    for (var signal in signals) {
+      print('Signal from ${signal.ownerId} to ${signal.destinationId} at (${signal.x}, ${signal.y}) of type ${signal.type} with duration ${signal.duration}');
+    }
+    print("-------- End of Signals -------");
+    print("");
   }
 }

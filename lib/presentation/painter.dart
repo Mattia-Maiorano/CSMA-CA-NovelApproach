@@ -1,6 +1,7 @@
 import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/classic_rsu.dart';
+// MDP entities no longer required for painting directly; rely on base classes
 import 'package:daemon/domain/network/medium.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:flutter/material.dart';
@@ -29,7 +30,9 @@ class ScenePainter extends CustomPainter {
         canvas.drawRect(
             Rect.fromLTWH(ent.position.x * tileSize, ent.position.y * tileSize, tileSize, tileSize),
             paintRSU);
-        canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * ent.range as double, paintRSUrange);
+        // Base range (static)
+        canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * tileSize, paintRSUrange);
+        // (Removed visualization for MDP txPower since txPower is no longer an MDP parameter)
       } else if (ent is Car) {
 
         bool collision = false;
@@ -44,23 +47,23 @@ class ScenePainter extends CustomPainter {
             Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
             tileSize / 2,
             paintStoppedCar);
-        } else if (ent.free == true) {
-          canvas.drawCircle(
-            Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
-            tileSize / 2,
-            paintFreeCar);
         } else if (collision) {
           canvas.drawCircle(
             Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
             tileSize / 2,
             paintCollision);
+        } else if (ent.free == true) {
+          canvas.drawCircle(
+            Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
+            tileSize / 2,
+            paintFreeCar);
         } else {
           canvas.drawCircle(
             Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
             tileSize / 2,
             paintCar);
         }
-        canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * ent.range as double, paintRSUrange);
+        // (Removed visualization for MDP txPower since txPower is no longer an MDP parameter)
       }
     }
     List<Signal> signals = medium.signals;
@@ -69,25 +72,17 @@ class ScenePainter extends CustomPainter {
         ..color = signal.type == SignalType.rts ? Colors.green : (signal.type == SignalType.ack ? Colors.orange : Colors.purple)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0;
-      canvas.drawCircle(
+        final double r = (signal.txRange > 0) ? signal.txRange.toDouble() : (signal.duration.toDouble());
+        canvas.drawCircle(
           Offset(signal.x * tileSize + tileSize / 2, signal.y * tileSize + tileSize / 2),
-          signal.duration * signal.duration as double,
+          r * tileSize,
           paintSignal);
     }
   }
 
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) {
-
     return true;
-
-    for (int i = 0; i < entities.length; i++) {
-      if (entities[i].position != (oldDelegate as ScenePainter).entities[i].position) {
-        return true;
-      }
-    }
-
-    return false;
   }
 }
 

@@ -9,8 +9,12 @@ import 'package:daemon/application/loop.dart';
 import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/classic_rsu.dart';
+import 'package:daemon/domain/entities/mdp_car.dart';
+import 'package:daemon/domain/entities/mdp_rsu.dart';
 import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/utils/config.dart';
+import 'package:daemon/utils/analyzer.dart';
+import 'package:daemon/utils/resumer.dart';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -31,19 +35,25 @@ class MyHomePage extends StatefulWidget {
 
 class _MyHomePageState extends State<MyHomePage> {
   bool _started = false;
+  bool _gridLoaded = false;
+  bool _showConfig = true;
+  
   late final Medium medium = Medium();
   late final BaseRepo<Car> _carRepo;
   late final BaseRepo<RSU> _rsuRepo;
   late final InMemRepoBase<Entity<dynamic>> _entRepo;
+  late final Analyzer _analyzer = Analyzer();
   late Loop _loop;
 
+  // Configuration parameters
+  int _carNum = CARNUM;
+  int _rsuNum = RSUNUM;
+  int _fps = FPS;
+  bool _useMDP = USE_MDP;
+
   // GAME PARAMETERS
-  final int fps = FPS;
-  final int subFrames = 250000;
   final double tileSize = 20;
   final int range = RANGE;
-  final int carFrameUpdateInterval = 9;
-  final int rsuFrameUpdateInterval = 9;
   final int carSensingRange = 3;
   final int rsuSensingRange = 3;
 
@@ -58,13 +68,10 @@ class _MyHomePageState extends State<MyHomePage> {
     _carRepo = RepoView<Car>(_entRepo, (e) => e is Car);
     _rsuRepo = RepoView<RSU>(_entRepo, (e) => e is RSU);
 
-    Completer <void> completer = Completer<void>();
-
-    completer.complete(_loadGrid());
-    print("Loading grid...");
+    _loadGridOnly();
   }
 
-  Future<void> _loadGrid() async {
+  Future<void> _loadGridOnly() async {
     try{
       final file = (await rootBundle.load('assets/simple_grid.png')).buffer.asUint8List();
       final bytes = file;
@@ -80,34 +87,53 @@ class _MyHomePageState extends State<MyHomePage> {
         grid = List.generate(image.height, (_) => List<int>.filled(image.width, 0));
       });
 
-      final Random rndm = Random();
-      List<(int, int)> carPositions = [];
-
-
-      // --- INSTANTIATE RSUS ---
-      int numRSUs = 0;
+      // Parse grid
       for (int y = 0; y < image.height; y++) {
         for (int x = 0; x < image.width; x++) {
-
           final pixel = image.getPixel(x, y);
           final r = pixel.r, g = pixel.g, b = pixel.b, a = pixel.a;
           if (r + g + b == 0 && a == 255) {
-            // Black pixel - crossroad
-            grid[y][x] = 5;
+            grid[y][x] = 5; // Black - crossroad
           } else if (r + g + b == 765) {
-            // White pixel - up road
-            grid[y][x] = 1;
+            grid[y][x] = 1; // White - up road
           } else if (r == 255 && g == 0 && b == 0) {
-            // Red pixel - right road
-            grid[y][x] = 2;
+            grid[y][x] = 2; // Red - right road
           } else if (r == 0 && g == 255 && b == 0) {
-            // Green pixel - down road
-            grid[y][x] = 3;
+            grid[y][x] = 3; // Green - down road
           } else if (r == 0 && g == 0 && b == 255) {
-            // Blue pixel - left road
-            grid[y][x] = 4;
-          } else if (r == 100 && g == 0 && b == 0 && _entRepo.items.whereType<RSU>().length < RSUNUM) {
-            RSU rsu = RSU(
+            grid[y][x] = 4; // Blue - left road
+          } else if (r == 100 && g == 0 && b == 0) {
+            grid[y][x] = 100; // Dark red - RSU location
+          }
+        }
+      }
+
+      setState(() {
+        _gridLoaded = true;
+      });
+      
+      print('Grid loaded: $gridWidth x $gridHeight');
+    } catch (e) {
+      print('Error loading grid: $e');
+    }
+  }
+
+  Future<void> _loadGrid() async {
+    // Clear existing entities
+    final entitiesToRemove = _entRepo.items.toList();
+    for (final entity in entitiesToRemove) {
+      await _entRepo.removeItem(entity);
+    }
+
+    final Random rndm = Random();
+    List<(int, int)> carPositions = [];
+
+    // --- INSTANTIATE RSUS ---
+    int numRSUs = 0;
+    for (int y = 0; y < gridHeight; y++) {
+      for (int x = 0; x < gridWidth; x++) {
+        if (grid[y][x] == 100 && numRSUs < _rsuNum) {
+          RSU rsu = _useMDP ? MDPRSU(
             id: numRSUs++,
             position: Position(
               x: x,
@@ -116,55 +142,72 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
             range: range,
             sensingRange: rsuSensingRange,
-            );
+            analyzer: _analyzer,
+          ) : RSU(
+            id: numRSUs++,
+            position: Position(
+              x: x,
+              y: y,
+              direction: Direction.up,
+            ),
+            range: range,
+            sensingRange: rsuSensingRange,
+            analyzer: _analyzer,
+          );
 
-            _entRepo.addItem(rsu);
-          }
+          _entRepo.addItem(rsu);
+        }
 
-          /*
-          if (grid[y][x] != 0) {
-            if (rndm.nextDouble() > 0.5 && carPositions.length < CARNUM) {
-              if (!carPositions.contains((x, y))) {
-                carPositions.add((x, y));
-              }
+        if (grid[y][x] != 0 && grid[y][x] != 100) {
+          if (rndm.nextDouble() > 0.5 && carPositions.length < _carNum) {
+            if (!carPositions.contains((x, y))) {
+              carPositions.add((x, y));
             }
           }
-          */
         }
       }
-
-      // --- INSTANTIATE CARS ---
-      // uncomment for debug
-      carPositions = [
-        (16, 15),
-        (22,15)
-      ];
-      List<Direction> directions = [
-        Direction.right,
-        Direction.left
-      ];
-      int index = 0;
-      for (final pos in carPositions) {
-        final (carX, carY) = pos;
-        // final direction = Direction.values[rndm.nextInt(Direction.values.length)];
-        final direction = directions[index++];
-
-        Car car = Car(
-          id: _entRepo.items.length,
-          model: rndm.nextInt(5),
-          position: Position(x: carX, y: carY, direction: direction),
-          manhattanGrid: grid,
-          range: range,
-          sensingRange: carSensingRange,
-          timer: rndm.nextInt(10),
-        );
-
-        _entRepo.addItem(car);
-      }
-      print('Grid loaded: $gridWidth x $gridHeight');
-    } catch (e) {
-      print('Error loading grid: $e');
     }
+
+    // --- INSTANTIATE CARS ---
+    for (final pos in carPositions) {
+      final (carX, carY) = pos;
+      final direction = Direction.values[rndm.nextInt(Direction.values.length)];
+
+      Car car = _useMDP ? MDPCar(
+        id: _entRepo.items.length,
+        model: rndm.nextInt(5),
+        position: Position(x: carX, y: carY, direction: direction),
+        manhattanGrid: grid,
+        range: range,
+        sensingRange: carSensingRange,
+        timer: rndm.nextInt(10),
+        analyzer: _analyzer,
+      ) : Car(
+        id: _entRepo.items.length,
+        model: rndm.nextInt(5),
+        position: Position(x: carX, y: carY, direction: direction),
+        manhattanGrid: grid,
+        range: range,
+        sensingRange: carSensingRange,
+        timer: rndm.nextInt(10),
+        analyzer: _analyzer,
+      );
+
+      _entRepo.addItem(car);
+    }
+
+    print('Loaded ${_entRepo.items.whereType<RSU>().length} RSUs and ${_entRepo.items.whereType<Car>().length} Cars');
+  }
+
+  void _applyConfigAndStart() async {
+    setState(() {
+      _showConfig = false;
+    });
+    
+    print("Applying configuration: Cars=$_carNum, RSUs=$_rsuNum, FPS=$_fps, MDP=$_useMDP");
+
+    await _loadGrid();
+    _start();
   }
 
   void _start() async {
@@ -173,21 +216,45 @@ class _MyHomePageState extends State<MyHomePage> {
       print("------------ STARTED ------------");
       setState(() { _started = true; });
 
-      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: fps, medium: medium);
-      _loop.start();
-    } else {
+      _loop = Loop(carRepo: _carRepo, rsuRepo: _rsuRepo, entRepo: _entRepo, fps: _fps, medium: medium, analyzer: _analyzer);
+      _loop.start(_useMDP);
+      } else {
       print("------------ STOPPED ------------");
+
       _loop.stop();
       await _loop.waitForStop();
+      // Ensure the Analyzer writes the ZIP and allow immediate download if available
+        try {
+          final savedPath = await _analyzer.closeAndWrite(_useMDP);
+        final messenger = ScaffoldMessenger.of(context);
+        if (savedPath != null) {
+          messenger.showSnackBar(SnackBar(content: Text('Analyzer export saved: $savedPath')));
+        } else {
+          // Fallback: maybe closeAndWrite didn't save to a file (web or other); try to trigger download with bytes
+          final fallback = await _analyzer.downloadLastZip();
+          if (fallback != null) {
+            messenger.showSnackBar(SnackBar(content: Text('Analyzer export saved: $fallback')));
+          } else {
+            messenger.showSnackBar(const SnackBar(content: Text('Analyzer export created; no file saved automatically - open Resumer to download or check console for logs')));
+          }
+        }
+        } catch (e) {
+        print('Analyzer export failed: $e');
+        final messenger = ScaffoldMessenger.of(context);
+        messenger.showSnackBar(SnackBar(content: Text('Analyzer export failed: $e')));
+      }
 
-      setState(() { _started = false; });
+      setState(() { 
+        _started = false;
+        _showConfig = true;
+      });
     }
   }
 
   @override
   Widget build(BuildContext context) {
 
-    if (gridWidth == 0 || gridHeight == 0) {
+    if (!_gridLoaded) {
       return Scaffold(
         appBar: AppBar(
           title: Text(widget.title),
@@ -195,9 +262,226 @@ class _MyHomePageState extends State<MyHomePage> {
             color: Color.fromARGB(255, 0, 0, 0),
             fontSize: 20,
           ),
+          actions: [
+            IconButton(
+              tooltip: 'Download last analyzer ZIP',
+              icon: const Icon(Icons.download),
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  if (_analyzer.lastZipBytes == null || _analyzer.lastZipFilename == null) {
+                    messenger.showSnackBar(const SnackBar(content: Text('No analyzer ZIP available yet.')));
+                    return;
+                  }
+                  final saved = await _analyzer.downloadLastZip();
+                  if (saved != null) messenger.showSnackBar(SnackBar(content: Text('Analyzer export saved: $saved')));
+                  else messenger.showSnackBar(const SnackBar(content: Text('Analyzer ZIP download started')));
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text('Failed to download analyzer ZIP: $e')));
+                }
+              },
+            ),
+            IconButton(
+              tooltip: 'Export analyzer now',
+              icon: const Icon(Icons.save),
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  final savedPath = await _analyzer.closeAndWrite(_useMDP);
+                  if (savedPath != null) {
+                    messenger.showSnackBar(SnackBar(content: Text('Analyzer export saved: $savedPath')));
+                  } else {
+                    messenger.showSnackBar(const SnackBar(content: Text('Analyzer export created; check Resumer to download')));
+                  }
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text('Failed to export analyzer: $e')));
+                }
+              },
+            ),
+          ],
         ),
         body: const Center(
           child: CircularProgressIndicator(),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => ResumerPage(analyzer: _analyzer)),
+            );
+          },
+          tooltip: 'Open MDP Analyzer',
+          child: const Icon(Icons.bar_chart),
+        ),
+      );
+    }
+
+    if (_showConfig) {
+      return Scaffold(
+      appBar: AppBar(
+          title: Text(widget.title),
+          titleTextStyle: const TextStyle(
+            color: Color.fromARGB(255, 0, 0, 0),
+            fontSize: 20,
+          ),
+          actions: [
+            IconButton(
+              tooltip: 'Download last analyzer ZIP',
+              icon: const Icon(Icons.download),
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  if (_analyzer.lastZipBytes == null || _analyzer.lastZipFilename == null) {
+                    messenger.showSnackBar(const SnackBar(content: Text('No analyzer ZIP available yet.')));
+                    return;
+                  }
+                  final saved = await _analyzer.downloadLastZip();
+                  if (saved != null) messenger.showSnackBar(SnackBar(content: Text('Analyzer export saved: $saved')));
+                  else messenger.showSnackBar(const SnackBar(content: Text('Analyzer ZIP download started')));
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text('Failed to download analyzer ZIP: $e')));
+                }
+              },
+            ),
+            IconButton(
+              tooltip: 'Export analyzer now',
+              icon: const Icon(Icons.save),
+              onPressed: () async {
+                final messenger = ScaffoldMessenger.of(context);
+                try {
+                  final savedPath = await _analyzer.closeAndWrite(_useMDP);
+                  if (savedPath != null) {
+                    messenger.showSnackBar(SnackBar(content: Text('Analyzer export saved: $savedPath')));
+                  } else {
+                    messenger.showSnackBar(const SnackBar(content: Text('Analyzer export created; check Resumer to download')));
+                  }
+                } catch (e) {
+                  messenger.showSnackBar(SnackBar(content: Text('Failed to export analyzer: $e')));
+                }
+              },
+            ),
+          ],
+        ),
+        body: Center(
+          child: Card(
+            elevation: 8,
+            margin: const EdgeInsets.all(40),
+            child: Padding(
+              padding: const EdgeInsets.all(40.0),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  const Text(
+                    'Simulation Configuration',
+                    style: TextStyle(
+                      fontSize: 24,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                  const SizedBox(height: 30),
+                  
+                  // Car Number Slider
+                  Text('Number of Cars: $_carNum', style: const TextStyle(fontSize: 16)),
+                  Slider(
+                    value: _carNum.toDouble(),
+                    min: 1,
+                    max: 20,
+                    divisions: 19,
+                    label: _carNum.toString(),
+                    onChanged: (value) {
+                      setState(() {
+                        _carNum = value.toInt();
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // RSU Number Slider
+                  Text('Number of RSUs: $_rsuNum', style: const TextStyle(fontSize: 16)),
+                  Slider(
+                    value: _rsuNum.toDouble(),
+                    min: 1,
+                    max: 4,
+                    divisions: 3,
+                    label: _rsuNum.toString(),
+                    onChanged: (value) {
+                      setState(() {
+                        _rsuNum = value.toInt();
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // FPS Slider
+                  Text('FPS: $_fps', style: const TextStyle(fontSize: 16)),
+                  Slider(
+                    value: _fps.toDouble(),
+                    min: 1,
+                    max: 10,
+                    divisions: 9,
+                    label: _fps.toString(),
+                    onChanged: (value) {
+                      setState(() {
+                        _fps = value.toInt();
+                      });
+                    },
+                  ),
+                  const SizedBox(height: 20),
+                  
+                  // MDP Toggle
+                  Row(
+                    children: [
+                      const Text('Execution Mode:', style: TextStyle(fontSize: 16)),
+                      const SizedBox(width: 20),
+                      ChoiceChip(
+                        label: const Text('Classic'),
+                        selected: !_useMDP,
+                        onSelected: (selected) {
+                          setState(() {
+                            _useMDP = false;
+                          });
+                        },
+                      ),
+                      const SizedBox(width: 10),
+                      ChoiceChip(
+                        label: const Text('MDP'),
+                        selected: _useMDP,
+                        onSelected: (selected) {
+                          setState(() {
+                            _useMDP = true;
+                          });
+                        },
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 40),
+                  
+                  // Start Button
+                  Center(
+                    child: ElevatedButton(
+                      onPressed: _applyConfigAndStart,
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: Colors.green,
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(horizontal: 50, vertical: 20),
+                        textStyle: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
+                      child: const Text('START SIMULATION'),
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ),
+        floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => ResumerPage(analyzer: _analyzer)),
+            );
+          },
+          tooltip: 'Open MDP Analyzer',
+          child: const Icon(Icons.bar_chart),
         ),
       );
     }
@@ -209,7 +493,42 @@ class _MyHomePageState extends State<MyHomePage> {
           color: Color.fromARGB(255, 0, 0, 0),
           fontSize: 20,
         ),
-      ),
+        actions: [
+        IconButton(
+          tooltip: 'Download last analyzer ZIP',
+          icon: const Icon(Icons.download),
+          onPressed: () async {
+            final messenger = ScaffoldMessenger.of(context);
+            try {
+              if (_analyzer.lastZipBytes == null || _analyzer.lastZipFilename == null) {
+                messenger.showSnackBar(const SnackBar(content: Text('No analyzer ZIP available yet.')));
+                return;
+              }
+              await _analyzer.downloadLastZip();
+              messenger.showSnackBar(const SnackBar(content: Text('Analyzer ZIP download started')));
+            } catch (e) {
+              messenger.showSnackBar(SnackBar(content: Text('Failed to download analyzer ZIP: $e')));
+            }
+          },
+        ),
+          IconButton(
+            tooltip: 'Export analyzer now',
+            icon: const Icon(Icons.save),
+            onPressed: () async {
+              final messenger = ScaffoldMessenger.of(context);
+              try {
+                final savedPath = await _analyzer.closeAndWrite(_useMDP);
+                if (savedPath != null) {
+                  messenger.showSnackBar(SnackBar(content: Text('Analyzer export saved: $savedPath')));
+                } else {
+                  messenger.showSnackBar(const SnackBar(content: Text('Analyzer export created; check Resumer to download')));
+                }
+              } catch (e) {
+                messenger.showSnackBar(SnackBar(content: Text('Failed to export analyzer: $e')));
+              }
+            },
+          ),
+        ],),
       body: Stack(
         children: [
           SafeArea(
@@ -282,6 +601,15 @@ class _MyHomePageState extends State<MyHomePage> {
             ),
           ),
         ],
+      ),
+      floatingActionButton: FloatingActionButton(
+          onPressed: () {
+            Navigator.of(context).push(
+              MaterialPageRoute(builder: (context) => ResumerPage(analyzer: _analyzer)),
+            );
+          },
+        tooltip: 'Open MDP Analyzer',
+        child: const Icon(Icons.bar_chart),
       ),
     );
   }

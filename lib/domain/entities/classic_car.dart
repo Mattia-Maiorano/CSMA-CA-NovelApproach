@@ -4,20 +4,22 @@ import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/utils/config.dart';
+import 'package:daemon/utils/measurement.dart';
 
 class Car extends Entity {
   final List<List<int>> manhattanGrid;
   final int model;
+  int broadcastTimer = BROADCAST;
 
   bool stop = false;
   bool free = false;
 
-  Car({required int id, required this.model, required Position position, required this.manhattanGrid, required int range, required int sensingRange, int timer = 0}) : super(id, position, range, sensingRange, timer) {
+  Car({required int id, required this.model, required Position position, required this.manhattanGrid, required int range, required int sensingRange, int timer = 0, super.analyzer}) : super(id, position, range, sensingRange, timer) {
     emoji = "🚗";
   }
 
   @override
-void specificStep(int tick) {
+Measurement specificStep() {
 
     // ---- MOVEMENT LOGIC ----
     if (tick != 0) {
@@ -28,13 +30,16 @@ void specificStep(int tick) {
       stop = false;
       free = false;
     }
+
+    return Measurement(state: state, stage: stage, free: free, answered: requestedExit, softReset: softRst, hardReset: hardRst);
   }
 
   @override
-  void handleState(int tick) {
+  void handleState() {
 
-    if (tick % BROADCAST == 0 && state == NodeState.idle) {
+    if (broadcastTimer == 0 && state == NodeState.idle) {
       timeout = 0;
+      broadcastTimer = BROADCAST;
       nextState(NodeState.querying);
     }
 
@@ -76,12 +81,13 @@ void specificStep(int tick) {
 
   @override
   void handleTimers() {
-
     if (nav > 0) {
       nav--;
 
-      if (nav == 0) print('$id-$state)\t$emoji\t⏰​\t: nav expired');
-
+      if (nav == 0) print('$tick-$id-$state)\t$emoji\t⏰​\t: nav expired');
+      if (nav == 0) broadcastTimer = Random().nextInt(BROADCAST);
+    } else if (state == NodeState.idle) {
+      broadcastTimer--;
     } else if (requestedSend) {
       ifsTimer = 0;
 
@@ -100,8 +106,10 @@ void specificStep(int tick) {
     else if (timeout >= RESETTIME) {
       if (consecutiveCollisions < MAX_BACKOFF_EXPONENT) {
         softReset();
+        softRst = true;
       } else {
         reset();
+        hardRst = true;
       }
       timeout = 0;
     } else {
@@ -110,7 +118,7 @@ void specificStep(int tick) {
   }
 
   @override
-  void handleSignal(int tick, Signal? signalToRead) {
+  void handleSignal(Signal? signalToRead) {
     if (signalToRead != null) {
 
       if (state != NodeState.querying && validateSignal(signalToRead)) {
@@ -166,18 +174,22 @@ void specificStep(int tick) {
         requestedSend = false;
         confirmedSend = true;
 
+        final txRange = range;
         return Signal(
           ownerId: id,
           destinationId: -1,
           x: position.x,
           y: position.y,
           type: SignalType.rts,
+          car: this,
+          txRange: txRange,
         );
       } else if (stage == TalkingStage.cts) {
         stage = TalkingStage.query;
         requestedSend = false;
         confirmedSend = true;
 
+        final txRange = range;
         return Signal(
           ownerId: id,
           destinationId: pal,
@@ -186,19 +198,23 @@ void specificStep(int tick) {
           type: SignalType.query,
           car: this,
           communicationOngoing: true,
+          txRange: txRange,
         );
       } else if (stage == TalkingStage.response) {
         stage = TalkingStage.ack;
         requestedSend = false;
         requestedExit = true;
 
+        final txRange = range;
         return Signal(
           ownerId: id,
           destinationId: pal,
           x: position.x,
           y: position.y,
           type: SignalType.ack,
+          car: this,
           communicationOngoing: true,
+          txRange: txRange,
         );
       }
     }
@@ -207,7 +223,7 @@ void specificStep(int tick) {
   }
 
   @override
-  void handleStage(int tick) {
+  void handleStage() {
     
     if (state == NodeState.querying) {
       if (stage == TalkingStage.idle && ifsTimer == DIFS) {
@@ -236,6 +252,7 @@ void specificStep(int tick) {
 
   @override
   softReset() {
+    if (state != NodeState.waiting) print("$tick-$id-$state)\t$emoji\t💥​\t: collision detected, no handling");
     if (state == NodeState.waiting) {
       enterCollisionHandling();
       requestedSend = true;
@@ -253,7 +270,7 @@ void specificStep(int tick) {
     }
 
     Position newPosition = moveForward();
-    int maxRetries = 10;
+    int maxRetries = 100;
     while (manhattanGrid[newPosition.y][newPosition.x] == 0 ||
         (manhattanGrid[newPosition.y][newPosition.x] != position.direction.index + 1 && manhattanGrid[newPosition.y][newPosition.x] != 5)) {
       if (maxRetries-- <= 0) break;

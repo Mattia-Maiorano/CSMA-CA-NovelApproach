@@ -1,7 +1,8 @@
 import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/network/signal.dart';
+import 'package:daemon/utils/analyzer.dart';
 import 'package:daemon/utils/config.dart';
-import 'package:image/image.dart';
+import 'package:daemon/utils/measurement.dart';
 
 enum NodeState {
   idle,
@@ -25,6 +26,7 @@ abstract class Entity<T> {
   final int range;
   final int sensingRange;
   Position position;
+  final Analyzer? analyzer;
 
   NodeState state = NodeState.idle;
   TalkingStage stage = TalkingStage.idle;
@@ -39,6 +41,8 @@ abstract class Entity<T> {
   bool queuedWake = false;
   bool requestedExit = false;
   bool backoffExpired = false;
+  bool softRst = false;
+  bool hardRst = false;
 
   int ifsTimer = 0;
   int nav = 0;
@@ -46,42 +50,47 @@ abstract class Entity<T> {
   int consecutiveCollisions = STARTING_EXPONENT;
   int backoffSlots = -1;
   int timeout = 0;
+  int tick = 0;
+  int frame = 0;
+
+  // Count of visible entities on the last tick (updated by Loop before stepping)
+  int seenCarsCount = 0;
+  int seenRsusCount = 0;
 
   Signal? lastSeenSignal;
   TalkingStage? lastReachedStage;
   NodeState? lastReachedState;
 
-  Entity(this.id, this.position, this.range, this.sensingRange, this.ifsTimer);
+  Entity(this.id, this.position, this.range, this.sensingRange, this.ifsTimer, {this.analyzer});
 
-  Signal? step(int tick, Signal? signalToRead) {
+  (Signal?, Measurement) step(int tick, int frame, Signal? signalToRead) {
+    this.tick = tick;
+    this.frame = frame;
 
-    if (id == 4) print("");
+    softRst = false;
+    hardRst = false;
 
-    Signal? signal;
-
-    // STATE MACHINE
-    handleState(tick);
-
-    // TIMING HANDLING
+    handleState();
     handleTimers();
+    handleSignal(signalToRead);
+    
+    Signal? signal;
+    if (state == NodeState.querying || state == NodeState.collision) {
+      signal = handleResponse();
+    }
 
-    // SIGNAL HANDLING
-    handleSignal(tick, signalToRead);
-    if (state == NodeState.querying || state == NodeState.collision) signal = handleResponse();
-
-    handleStage(tick);
-    specificStep(tick);
-
-    return signal;
+    handleStage();
+    
+    return (signal, specificStep());
   }
 
-  void specificStep(int tick);
+  Measurement specificStep();
 
-  void handleState(int tick);
+  void handleState();
 
-  void handleStage(int tick);
+  void handleStage();
 
-  void handleSignal(int tick, Signal? signalToRead);
+  void handleSignal(Signal? signalToRead);
 
   Signal? handleResponse();
 
@@ -116,10 +125,6 @@ abstract class Entity<T> {
       state = lastReachedState!;
       if (state == NodeState.waiting) confirmedSend = false;
     }
-  }
-
-  Signal? send() {
-    return null;
   }
 
   void reset({bool resetNav = true}) {
