@@ -32,6 +32,14 @@ class ScenePainter extends CustomPainter {
             paintRSU);
         // Base range (static)
         canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * tileSize, paintRSUrange);
+        // Epsilon change visual marker
+        if (ent.epsilonChanged) {
+          final paintEps = Paint()
+            ..color = Colors.purple
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3.0;
+          canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), tileSize / 2 + 4.0, paintEps);
+        }
         // (Removed visualization for MDP txPower since txPower is no longer an MDP parameter)
       } else if (ent is Car) {
 
@@ -62,6 +70,14 @@ class ScenePainter extends CustomPainter {
             Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
             tileSize / 2,
             paintCar);
+        }
+        // Epsilon change visual marker for cars
+        if (ent.epsilonChanged) {
+          final paintEps = Paint()
+            ..color = Colors.purple
+            ..style = PaintingStyle.stroke
+            ..strokeWidth = 3.0;
+          canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), tileSize / 2 + 4.0, paintEps);
         }
         // (Removed visualization for MDP txPower since txPower is no longer an MDP parameter)
       }

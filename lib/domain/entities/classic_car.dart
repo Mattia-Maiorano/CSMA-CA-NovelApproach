@@ -9,6 +9,10 @@ import 'package:daemon/utils/measurement.dart';
 class Car extends Entity {
   final List<List<int>> manhattanGrid;
   final int model;
+
+  final Set<int> seenCarIds = {};
+  int prevKnownCars = 0;
+
   int broadcastTimer = BROADCAST;
 
   bool stop = false;
@@ -16,6 +20,12 @@ class Car extends Entity {
 
   Car({required int id, required this.model, required Position position, required this.manhattanGrid, required int range, required int sensingRange, int timer = 0, super.analyzer}) : super(id, position, range, sensingRange, timer) {
     emoji = "🚗";
+  }
+  
+  @override
+  void reset({bool resetNav = true}) {
+    super.reset(resetNav: resetNav);
+    seenCarIds.clear();
   }
 
   @override
@@ -75,6 +85,7 @@ Measurement specificStep() {
       timeout = 0;
       nextState(NodeState.idle);
       requestedExit = false;
+      communicationOngoing = false;
     }
 
   }
@@ -85,7 +96,9 @@ Measurement specificStep() {
       nav--;
 
       if (nav == 0) print('$tick-$id-$state)\t$emoji\t⏰​\t: nav expired');
-      if (nav == 0) broadcastTimer = Random().nextInt(BROADCAST);
+      if (nav == 0) broadcastTimer = BROADCAST;
+
+      
     } else if (state == NodeState.idle) {
       broadcastTimer--;
     } else if (requestedSend) {
@@ -120,6 +133,8 @@ Measurement specificStep() {
   @override
   void handleSignal(Signal? signalToRead) {
     if (signalToRead != null) {
+
+      if (signalToRead.car != null) seenCarIds.add(signalToRead.car!.id);
 
       if (state != NodeState.querying && validateSignal(signalToRead)) {
 
@@ -175,7 +190,7 @@ Measurement specificStep() {
         confirmedSend = true;
 
         final txRange = range;
-        return Signal(
+        final signal = Signal(
           ownerId: id,
           destinationId: -1,
           x: position.x,
@@ -184,13 +199,16 @@ Measurement specificStep() {
           car: this,
           txRange: txRange,
         );
+        return signal;
+
       } else if (stage == TalkingStage.cts) {
         stage = TalkingStage.query;
         requestedSend = false;
         confirmedSend = true;
+        communicationOngoing = true;
 
         final txRange = range;
-        return Signal(
+        final signal = Signal(
           ownerId: id,
           destinationId: pal,
           x: position.x,
@@ -200,13 +218,15 @@ Measurement specificStep() {
           communicationOngoing: true,
           txRange: txRange,
         );
+        return signal;
+
       } else if (stage == TalkingStage.response) {
         stage = TalkingStage.ack;
         requestedSend = false;
         requestedExit = true;
 
         final txRange = range;
-        return Signal(
+        final signal = Signal(
           ownerId: id,
           destinationId: pal,
           x: position.x,
@@ -216,6 +236,7 @@ Measurement specificStep() {
           communicationOngoing: true,
           txRange: txRange,
         );
+        return signal;
       }
     }
 

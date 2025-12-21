@@ -43,6 +43,7 @@ abstract class Entity<T> {
   bool backoffExpired = false;
   bool softRst = false;
   bool hardRst = false;
+  bool communicationOngoing = false;
 
   int ifsTimer = 0;
   int nav = 0;
@@ -53,19 +54,27 @@ abstract class Entity<T> {
   int tick = 0;
   int frame = 0;
 
-  // Count of visible entities on the last tick (updated by Loop before stepping)
+  // Count of visible entities on the last tick (entity-local knowledge)
   int seenCarsCount = 0;
   int seenRsusCount = 0;
 
   Signal? lastSeenSignal;
   TalkingStage? lastReachedStage;
   NodeState? lastReachedState;
+  // Marker set by Analyzer when an agent's epsilon was increased.
+  // The flag is visible for one frame (tick) so UI painters can render it.
+  bool epsilonChanged = false;
+  // Last episode index when epsilon changed for this node; useful for debugging
+  int lastEpsilonChangeEpisode = -1;
 
   Entity(this.id, this.position, this.range, this.sensingRange, this.ifsTimer, {this.analyzer});
 
   (Signal?, Measurement) step(int tick, int frame, Signal? signalToRead) {
     this.tick = tick;
     this.frame = frame;
+
+    // UI marker for epsilon changes to reset at start of each step
+    if (tick == 0) epsilonChanged = false;
 
     softRst = false;
     hardRst = false;

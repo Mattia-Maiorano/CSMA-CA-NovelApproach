@@ -6,7 +6,8 @@ import 'dart:math' as math;
 import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'analyzer_writer_io.dart'
-    if (dart.library.html) 'analyzer_writer_web.dart';
+  if (dart.library.html) 'analyzer_writer_web.dart';
+import 'package:daemon/utils/slope_utils.dart' as slope_utils;
 
 /// Data structure to track MDP learning progress per node
 class MDPNodeProgress {
@@ -46,36 +47,57 @@ class Analyzer {
   int avgFreeCars = 0;
   int totalDifferentProcessed = 0;
   int totalDifferentProcessedFrames = 0;
+  final List<int> _differentCarsProcessed = [];
+  int totalRts = 0;
+  int totalAcks = 0;
+  final List<int> _rtsPerFrame = [];
+  final List<int> _acksPerFrame = [];
+  int _currentFrameRts = 0;
+  int _currentFrameAcks = 0;
 
   // MDP progress tracking
   final Map<int, MDPNodeProgress> _mdpProgress = {};
   bool _mdpEnabled = false;
+  // optional map of registered live agent instances so Analyzer can trigger epsilon changes
+  final Map<int, dynamic> _mdpAgents = {};
+  // optional map of registered live entity instances so Analyzer can toggle visual markers
+  final Map<int, Entity> _mdpEntities = {};
+  // track last episode index when epsilon was changed per-node to enforce cooldown
+  final Map<int, int> _lastEpsilonChangeEpisode = {};
+  // track epsilon change events per node: nodeId -> episodeIndex -> { 'old': x, 'new': y }
+  final Map<int, Map<int, Map<String, double>>> _epsilonChangeEvents = {};
   // Keep last generated zip bytes & filename so the UI can re-download it on demand
   Uint8List? lastZipBytes;
   String? lastZipFilename;
 
   // Reusable mapping for what state features an agent family uses
-  static const Map<String, List<String>> agentUsedFields = {
-    'Car': [
-      'st:carsInRange',
-      'st:consecutiveCollisions',
-      'st:carsInRangeRollingMean',
-      'st:broadcastBucket',
-      'st:timeoutBucket',
-      'st:jitterBucket',
-    ],
-    'RSU': [
-      'st:processedRate',
-      'st:processedCount',
-      'st:consecutiveCollisions',
-      'st:timeoutBucket',
-      'st:jitterBucket',
-      'st:carsInRange',
-    ],
-  };
+  // NOTE: agentUsedFields removed; Resumer will dynamically discover fields from exporter JSON.
 
   void enableMDPTracking() {
     _mdpEnabled = true;
+    // Reset per-run collections when enabling tracking to avoid mixing across runs
+    _differentCarsProcessed.clear();
+    _rtsPerFrame.clear();
+    _acksPerFrame.clear();
+    _currentFrameRts = 0;
+    _currentFrameAcks = 0;
+    totalRts = 0;
+    totalAcks = 0;
+  }
+
+  /// Register a live Agent instance by its nodeId so Analyzer can request epsilon changes.
+  void registerMdpAgent(int nodeId, dynamic agent) {
+    _mdpAgents[nodeId] = agent;
+  }
+
+  /// Register a live Entity instance by its nodeId so Analyzer can toggle visual markers
+  void registerMdpEntity(int nodeId, Entity ent) {
+    _mdpEntities[nodeId] = ent;
+  }
+
+  /// Return the registered agent for the given nodeId (useful for testing/monitoring)
+  dynamic getRegisteredMdpAgent(int nodeId) {
+    return _mdpAgents[nodeId];
   }
 
   void recordMDPProgress(
@@ -92,7 +114,75 @@ class Analyzer {
     }
 
     _mdpProgress[nodeId]!.recordProgress(reward, state, params);
+    // Apply passive epsilon decay for the agent if registered (apply each episode)
+    final agent = _mdpAgents[nodeId];
+    if (agent != null) {
+      try {
+        final oldEps = agent.getEpsilon();
+        final double newEps = oldEps > EPSILON_BASELINE ? (oldEps * EPSILON_DECAY_FACTOR).clamp(EPSILON_BASELINE, EPSILON_MAX) : oldEps;
+        if (newEps != oldEps) agent.setEpsilon(newEps);
+      } catch (e) {
+        // ignore if agent doesn't support get/set
+      }
+    }
+    // evaluate reward gradient and adjust epsilon if needed
+    try {
+      _evaluateRewardGradient(nodeId);
+    } catch (e) {
+      print('Gradient evaluation failed for node $nodeId: $e');
+    }
   }
+
+  void _evaluateRewardGradient(int nodeId) {
+    final prog = _mdpProgress[nodeId];
+    if (prog == null || prog.rewards.length < REWARD_GRAD_WINDOW) return;
+    final int w = REWARD_GRAD_WINDOW;
+    final int total = prog.rewards.length;
+    // Compute linear regression slope across the last w points.
+    // This reflects the trend in recent rewards and is used to measure
+    // whether performance is degrading (slope sufficiently negative).
+    final window = prog.rewards.sublist(total - w, total);
+    final double slope = slope_utils.computeSlope(window);
+    // Compute effective threshold considering sensitivity configuration
+    final double effectiveThreshold = REWARD_GRAD_THRESHOLD * REWARD_GRAD_SENSITIVITY;
+    // If slope is smaller than the configured threshold (e.g. more negative), trigger
+    final bool triggered = slope < effectiveThreshold;
+    if (triggered) {
+      // decrease reward trend: increase exploration
+      final agent = _mdpAgents[nodeId];
+      if (agent == null) return;
+      // Enforce cooldown: only allow epsilon change if enough episodes have elapsed since last change
+      // `total` is already declared above as the length of rewards
+      final int lastChange = _lastEpsilonChangeEpisode[nodeId] ?? -9999999;
+      if (total - lastChange < EPSILON_COOLDOWN_EPISODES) {
+        // cooldown in effect; no change
+        return;
+      }
+      print('Analyzer: node $nodeId reward slope $slope < threshold $REWARD_GRAD_THRESHOLD. Adjust epsilon.');
+      // Try to read current epsilon and set a new value. Use try/catch to support agents that might not implement the interface.
+      try {
+        final oldEps = agent.getEpsilon();
+        final newEps = (oldEps + EPSILON_INC).clamp(EPSILON_MIN, EPSILON_MAX);
+        agent.setEpsilon(newEps);
+        // record last change episode index
+        _lastEpsilonChangeEpisode[nodeId] = total;
+        // persist change event for export
+        _epsilonChangeEvents[nodeId] ??= {};
+        _epsilonChangeEvents[nodeId]![total] = {'old': oldEps, 'new': newEps};
+        // Toggle entity visual marker if registered
+        final ent = _mdpEntities[nodeId];
+        if (ent != null) {
+          ent.epsilonChanged = true;
+          ent.lastEpsilonChangeEpisode = total;
+        }
+        print('Analyzer: node $nodeId epsilon changed from $oldEps to $newEps');
+      } catch (e) {
+        // ignore if agent doesn't implement get/set
+      }
+    }
+  }
+
+  // slope computations are moved to `slope_utils.dart` to avoid duplication
 
   void recordMDPAction(int nodeId, String action) {
     if (!_mdpEnabled) return;
@@ -114,6 +204,27 @@ class Analyzer {
   void recordDifferentCarsProcessed(int differentCars) {
     totalDifferentProcessed += differentCars;
     totalDifferentProcessedFrames++;
+    _differentCarsProcessed.add(differentCars);
+  }
+
+  void incrementRts() {
+    if (!_mdpEnabled) return;
+    totalRts++;
+    _currentFrameRts++;
+  }
+
+  void incrementAcks() {
+    if (!_mdpEnabled) return;
+    totalAcks++;
+    _currentFrameAcks++;
+  }
+
+  /// Called at the end of a frame to record per-frame ack/rts observations
+  void completeThroughputFrame() {
+    _rtsPerFrame.add(_currentFrameRts);
+    _acksPerFrame.add(_currentFrameAcks);
+    _currentFrameRts = 0;
+    _currentFrameAcks = 0;
   }
 
   void incrementBusyMedium() {
@@ -132,198 +243,15 @@ class Analyzer {
     totalSlots = slots;
   }
 
-  double _pearsonCorrelation(List<double> xs, List<double> ys) {
-    if (xs.length != ys.length || xs.isEmpty) return double.nan;
-    final n = xs.length;
-    final meanX = xs.reduce((a, b) => a + b) / n;
-    final meanY = ys.reduce((a, b) => a + b) / n;
-    double num = 0.0;
-    double denX = 0.0;
-    double denY = 0.0;
-    for (int i = 0; i < n; i++) {
-      final dx = xs[i] - meanX;
-      final dy = ys[i] - meanY;
-      num += dx * dy;
-      denX += dx * dx;
-      denY += dy * dy;
-    }
-    final denom = math.sqrt(denX * denY);
-    if (denom == 0.0) return double.nan;
-    return num / denom;
-  }
+  // NOTE: Pearson correlation and feature matrix generation removed for simplicity and readability.
 
   /// Compute per-node feature matrices and correlations from _mdpProgress.
   /// Returns a map with keys 'correlations' and 'matrices'.
-  Map<String, dynamic> _computeFeatureData() {
-    final featureCorrelations = <String, Map<String, double>>{};
-    final featureMatrices = <String, dynamic>{};
-    if (_mdpProgress.isEmpty)
-      return {'correlations': featureCorrelations, 'matrices': featureMatrices};
-
-    for (final progress in _mdpProgress.values) {
-      if (progress.rewards.length < 2) {
-        // Not enough data to compute correlations
-        continue;
-      }
-
-      // Build state-side feature matrix and correlations
-      final stateResult = _buildFeatureVectorsAndMatrix(progress, 'state');
-      if (stateResult.isNotEmpty) {
-        final fList = stateResult['features'] as List<String>;
-        final matrix = stateResult['matrix'] as List<List<double?>>;
-        final corrMap = stateResult['corrMap'] as Map<String, double>;
-        featureMatrices['NODE${progress.nodeId}'] ??= {};
-        featureMatrices['NODE${progress.nodeId}']['state'] = {
-          'features': fList,
-          'matrix': matrix,
-        };
-        featureCorrelations['NODE${progress.nodeId}'] =
-            Map<String, double>.from(corrMap);
-      }
-
-      // Build params-side matrix and merge correlations
-      final paramsResult = _buildFeatureVectorsAndMatrix(progress, 'params');
-      if (paramsResult.isNotEmpty) {
-        final fList = paramsResult['features'] as List<String>;
-        final matrix = paramsResult['matrix'] as List<List<double?>>;
-        final corrMap = paramsResult['corrMap'] as Map<String, double>;
-        featureMatrices['NODE${progress.nodeId}'] ??= {};
-        featureMatrices['NODE${progress.nodeId}']['params'] = {
-          'features': fList,
-          'matrix': matrix,
-        };
-        // merge into single map
-        final existing = featureCorrelations['NODE${progress.nodeId}'] ?? {};
-        existing.addAll(corrMap);
-        featureCorrelations['NODE${progress.nodeId}'] = existing;
-      }
-    }
-
-    return {'correlations': featureCorrelations, 'matrices': featureMatrices};
-  }
+  // Feature matrix computation removed - not currently used by Resumer.
 
   /// Build feature vectors, pairwise correlation matrix and single feature correlations for a single progress entry.
   /// Returns a map: { 'features': fList, 'matrix': matrix, 'corrMap': corrMap }
-  Map<String, dynamic> _buildFeatureVectorsAndMatrix(
-    MDPNodeProgress progress,
-    String type,
-  ) {
-    final Set<String> stateFeatureKeys = {};
-    final Set<String> paramKeys = {};
-    final List<double> rew = [];
-    final List<Map<String, dynamic>> stateRows = [];
-    final List<Map<String, dynamic>> paramRows = [];
-
-    for (final stepState in progress.states) {
-      stateRows.add(stepState);
-      stateFeatureKeys.addAll(stepState.keys.map((k) => 'st:$k'));
-    }
-    for (final par in progress.parameters) {
-      paramRows.add(par);
-      paramKeys.addAll(par.keys.map((k) => 'par:$k'));
-    }
-    for (final r in progress.rewards) rew.add(r);
-
-    // Filter out state features not used by the agent type
-    final nodeType = progress.nodeType;
-    final allowed = Analyzer.agentUsedFields[nodeType] ?? [];
-    stateFeatureKeys.removeWhere((k) => !allowed.contains(k));
-
-    // Build feature vectors
-    final featureVectors = <String, List<double?>>{};
-    if (type == 'state') {
-      if (stateFeatureKeys.isEmpty) return {};
-      for (final f in stateFeatureKeys)
-        featureVectors[f] = List<double?>.filled(stateRows.length, null);
-      featureVectors['rew'] = List<double?>.filled(stateRows.length, null);
-      for (int i = 0; i < stateRows.length; i++) {
-        featureVectors['rew']![i] = rew.length > i ? rew[i] : null;
-        final st = stateRows[i];
-        for (final f in stateFeatureKeys) {
-          final key = f.substring(3);
-          if (st.containsKey(key)) {
-            final v = st[key];
-            final num? maybeNum = v as num?;
-            if (maybeNum != null)
-              featureVectors[f]![i] = maybeNum.toDouble();
-            else if (v is bool)
-              featureVectors[f]![i] = (v as bool) ? 1.0 : 0.0;
-          }
-        }
-      }
-    } else {
-      if (paramKeys.isEmpty) return {};
-      for (final f in paramKeys)
-        featureVectors[f] = List<double?>.filled(paramRows.length, null);
-      featureVectors['rew'] = List<double?>.filled(paramRows.length, null);
-      for (int i = 0; i < paramRows.length; i++) {
-        featureVectors['rew']![i] = rew.length > i ? rew[i] : null;
-        final pr = paramRows[i];
-        for (final f in paramKeys) {
-          final key = f.substring(4);
-          if (pr.containsKey(key)) {
-            final v = pr[key];
-            final num? maybeNum = v as num?;
-            if (maybeNum != null) featureVectors[f]![i] = maybeNum.toDouble();
-          }
-        }
-      }
-    }
-
-    if (featureVectors.isEmpty) return {};
-    final fList = featureVectors.keys.toList()
-      ..sort((a, b) {
-        if (a == 'rew' && b != 'rew') return -1;
-        if (b == 'rew' && a != 'rew') return 1;
-        return a.compareTo(b);
-      });
-    final int fN = fList.length;
-    final matrix = List.generate(fN, (_) => List<double?>.filled(fN, null));
-    for (int i = 0; i < fN; i++) {
-      for (int j = 0; j < fN; j++) {
-        final a = fList[i];
-        final b = fList[j];
-        final la = featureVectors[a]!;
-        final lb = featureVectors[b]!;
-        final int len = la.length < lb.length ? la.length : lb.length;
-        final List<double> xs = [];
-        final List<double> ys = [];
-        for (int k = 0; k < len; k++) {
-          final av = la[k];
-          final bv = lb[k];
-          if (av != null && bv != null) {
-            xs.add(av);
-            ys.add(bv);
-          }
-        }
-        if (xs.length >= 2) {
-          final corr = _pearsonCorrelation(xs, ys);
-          if (corr.isFinite) matrix[i][j] = corr;
-        }
-      }
-    }
-
-    final Map<String, double> corrMap = {};
-    for (final f in featureVectors.keys) {
-      final la = featureVectors[f]!;
-      final List<double> xs = [];
-      final List<double> ys = [];
-      for (int k = 0; k < la.length; k++) {
-        final av = la[k];
-        final rv = featureVectors['rew']![k];
-        if (av != null && rv != null) {
-          xs.add(av);
-          ys.add(rv);
-        }
-      }
-      if (xs.length >= 2) {
-        final c = _pearsonCorrelation(xs, ys);
-        if (c.isFinite) corrMap[f] = c;
-      }
-    }
-
-    return {'features': fList, 'matrix': matrix, 'corrMap': corrMap};
-  }
+  // Feature matrix helpers removed
 
   Future<String?> closeAndWrite(bool useMDP) async {
     // closeAndWrite called
@@ -357,36 +285,30 @@ class Analyzer {
     buffer.writeln(
       'Average different cars processed (free OR answered): ${avgDifferentProcessed.toStringAsFixed(2)}',
     );
+    // Throughput: acks per rts across frames
+    final double avgThroughput = totalRts > 0 ? totalAcks / totalRts : 0.0;
+    buffer.writeln('Average throughput (acks/rts): ${avgThroughput.toStringAsFixed(3)}');
+    if (_acksPerFrame.isNotEmpty && _rtsPerFrame.isNotEmpty) {
+      final int frames = math.min(_acksPerFrame.length, _rtsPerFrame.length);
+      final int recentCount = (frames * 0.1).ceil().clamp(1, frames);
+      final startIndex = frames - recentCount;
+      final recentAcks = _acksPerFrame.sublist(startIndex, frames).reduce((a, b) => a + b);
+      final recentRts = _rtsPerFrame.sublist(startIndex, frames).reduce((a, b) => a + b);
+      final double recentThroughput = recentRts > 0 ? recentAcks / recentRts : 0.0;
+      buffer.writeln('Recent Average throughput (last ${recentCount} frames): ${recentThroughput.toStringAsFixed(3)}');
+    }
+    if (_differentCarsProcessed.isNotEmpty) {
+      final int frames = _differentCarsProcessed.length;
+      final int recentCount = (frames * 0.1).ceil().clamp(1, frames);
+      final startIndex = frames - recentCount;
+      final recentList = _differentCarsProcessed.sublist(startIndex, frames);
+      final double recentAvg = recentList.reduce((a, b) => a + b) / recentList.length;
+      buffer.writeln('Recent Average different cars processed (last ${recentList.length} frames): ${recentAvg.toStringAsFixed(2)}');
+    }
     buffer.writeln('---------------------');
 
-    // Compute and collect MDP feature matrices and correlations if needed
-    final featureCorrelations = <String, Map<String, double>>{};
-    final featureMatrices = <String, dynamic>{};
-    final matricesAndCorrelations = useMDP ? _computeFeatureData() : null;
-    if (matricesAndCorrelations != null) {
-      // Safely cast nested maps from dynamic to correct types to avoid runtime type errors
-      final rawCorr = matricesAndCorrelations['correlations'];
-      if (rawCorr is Map) {
-        final typedCorr = <String, Map<String, double>>{};
-        for (final e in rawCorr.entries) {
-          final key = e.key.toString();
-          final val = e.value as Map?;
-          if (val != null)
-            typedCorr[key] = Map<String, double>.from(
-              val.map((k, v) => MapEntry(k.toString(), (v as num).toDouble())),
-            );
-        }
-        featureCorrelations.addAll(typedCorr);
-      }
-      final rawMats = matricesAndCorrelations['matrices'];
-      if (rawMats is Map) {
-        final typedMats = <String, dynamic>{};
-        for (final e in rawMats.entries) {
-          typedMats[e.key.toString()] = e.value;
-        }
-        featureMatrices.addAll(typedMats);
-      }
-      buffer.writeln('\n\n=== MDP LEARNING PROGRESS ===\n');
+    // Compute feature matrices and correlations removed for simplicity.
+    buffer.writeln('\n\n=== MDP LEARNING PROGRESS ===\n');
       // Short readable per-node summary
       for (final progress in _mdpProgress.values) {
         buffer.writeln('--- ${progress.nodeType} ${progress.nodeId} ---');
@@ -396,27 +318,34 @@ class Analyzer {
               progress.rewards.reduce((a, b) => a + b) /
               progress.rewards.length;
           buffer.writeln('Average Reward: ${avgReward.toStringAsFixed(2)}');
+
+          // Compute recent average over the last 10% of episodes to highlight progress
+          final int total = progress.rewards.length;
+          final int recentCount = (total * 0.1).ceil().clamp(1, total);
+          final startIndex = total - recentCount;
+          final recentList = progress.rewards.sublist(startIndex, total);
+          final double recentAvg = recentList.reduce((a, b) => a + b) / recentList.length;
+          buffer.writeln('Recent Average (last ${recentList.length} episodes): ${recentAvg.toStringAsFixed(2)}');
+          // include a slope measurement for the recent window
+          if (total >= REWARD_GRAD_WINDOW) {
+            final startIdx = total - REWARD_GRAD_WINDOW;
+            final window = progress.rewards.sublist(startIdx, total);
+            final double slope = slope_utils.computeSlope(window);
+            buffer.writeln('Reward slope (last $REWARD_GRAD_WINDOW): ${slope.toStringAsFixed(5)}');
+          }
+        }
+        // Print final parameters if available (e.g., epsilon for QAgent)
+        if (progress.parameters.isNotEmpty) {
+          final lastPar = progress.parameters.last;
+          buffer.writeln('Final Parameters:');
+          for (final entry in lastPar.entries) {
+            final key = entry.key;
+            final val = entry.value;
+            buffer.writeln('  $key: ${val.toStringAsFixed(3)}');
+          }
         }
       }
       buffer.writeln('=============================');
-      // Append brief correlations snapshot
-      for (final entry in featureCorrelations.entries) {
-        buffer.writeln('\n-- Feature correlations for ${entry.key} --');
-        final sorted = entry.value.entries.toList()
-          ..sort((a, b) => b.value.abs().compareTo(a.value.abs()));
-        for (int i = 0; i < math.min(sorted.length, 8); i++) {
-          final kv = sorted[i];
-          buffer.writeln('  ${kv.key}: ${kv.value.toStringAsFixed(3)}');
-        }
-      }
-      // Append pairwise matrix brief summary if present
-      for (final entry in featureMatrices.entries) {
-        buffer.writeln('\n-- Feature matrix for ${entry.key} --');
-        final mat = Map<String, dynamic>.from(entry.value as Map);
-        final flist = mat['features'] as List<dynamic>? ?? [];
-        buffer.writeln('Features: ${flist.length}');
-      }
-    }
 
     // For non-web: write the text log
     if (!kIsWeb) {
@@ -435,16 +364,56 @@ class Analyzer {
       }
 
       final List<Map<String, dynamic>> rows = [];
-      for (int i = 0; i < maxLen; i++) {
-        final Map<String, dynamic> row = {'step': i};
+        for (int i = 0; i < maxLen; i++) {
+          final Map<String, dynamic> row = {'step': i};
         for (final p in nodeList) {
           final nodeKey = 'NODE${p.nodeId}';
           row['${nodeKey}_rew'] = i < p.rewards.length ? p.rewards[i] : null;
           row['${nodeKey}_par'] = i < p.parameters.length
-              ? p.parameters[i]
-              : null;
+                ? p.parameters[i]
+                : null;
+          // export epsilon as flat top-level field for convenience
+          if (i < p.parameters.length && p.parameters[i].containsKey('epsilon')) {
+            row['${nodeKey}_epsilon'] = p.parameters[i]['epsilon'];
+          } else {
+            row['${nodeKey}_epsilon'] = null;
+          }
+          // Export epsilon change event if it occurred at this step
+          if (_epsilonChangeEvents.containsKey(p.nodeId) && _epsilonChangeEvents[p.nodeId]!.containsKey(i)) {
+            row['${nodeKey}_epsilon_change'] = _epsilonChangeEvents[p.nodeId]![i];
+          } else {
+            row['${nodeKey}_epsilon_change'] = null;
+          }
+          // Attach a reward slope to the param object for the current step if possible
+          double? slopeForStep;
+          final int w = REWARD_GRAD_WINDOW;
+          if (i >= w - 1) {
+            final int start = i - (w - 1);
+            final int end = i;
+            final List<double> stepWindow = [];
+            for (int k = start; k <= end; k++) {
+              final val = k < p.rewards.length ? p.rewards[k] : null;
+              if (val == null) break;
+              stepWindow.add(val.toDouble());
+            }
+            if (stepWindow.length == w) slopeForStep = slope_utils.computeSlope(stepWindow);
+          }
+          if (slopeForStep != null) {
+            if (row['${nodeKey}_par'] == null) row['${nodeKey}_par'] = {'reward_slope': slopeForStep};
+            else if (row['${nodeKey}_par'] is Map<String, dynamic>) row['${nodeKey}_par']['reward_slope'] = slopeForStep;
+          }
           row['${nodeKey}_state'] = i < p.states.length ? p.states[i] : null;
           row['${nodeKey}_act'] = i < p.actions.length ? p.actions[i] : null;
+        }
+        // Optionally include environment-level throughput metrics aligned by frame index
+        final int framesAcks = _acksPerFrame.length;
+        final int framesRts = _rtsPerFrame.length;
+        row['env_acks'] = i < framesAcks ? _acksPerFrame[i] : null;
+        row['env_rts'] = i < framesRts ? _rtsPerFrame[i] : null;
+        if (i < framesAcks && i < framesRts && _rtsPerFrame[i] > 0) {
+          row['env_throughput'] = _acksPerFrame[i] / _rtsPerFrame[i];
+        } else {
+          row['env_throughput'] = null;
         }
         rows.add(row);
       }
@@ -459,8 +428,7 @@ class Analyzer {
           'range': RANGE,
         },
         'steps': rows,
-        'feature_correlations': featureCorrelations,
-        'feature_matrices': featureMatrices,
+        // feature_correlations/feature_matrices removed for readability and performance
       };
 
       final wrappedOut = {'mdp': jsonOut};
@@ -528,6 +496,21 @@ class Analyzer {
     // downloadLastZip wrote file: $path
     return path;
   }
+
+  /// Compute the slope for a sliding window of `window` episodes from the end
+  /// of the provided reward list. If there are fewer than `window` rewards,
+  /// the function will return `0.0`.
+
+
+  /// Recommend a `REWARD_GRAD_THRESHOLD` value that would detect a linear
+  /// drop from `start` to `end` rewards over `window` episodes, given a
+  /// `sensitivity` and an optional `margin` multiplier (default 0.9) to make
+  /// the suggested threshold slightly less negative (easier to trigger).
+  ///
+  /// Formula:
+  ///   slope ≈ (end - start) / (window - 1)
+  ///   recommendedThreshold = (slope / sensitivity) * margin
+
 
   // NOTE: `buildCombinedJson` helper removed — Analyzer now writes JSON + TXT into a ZIP and stores its bytes for UI re-download.
   // (states_report and related functions removed)

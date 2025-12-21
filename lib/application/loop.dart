@@ -106,6 +106,8 @@ class Loop {
           processedCars.clear();
           analyzer?.setFreeCars(freeToMoveCars.length);
           freeToMoveCars.clear();
+          // End of frame: record and reset per-frame throughput counters
+          analyzer?.completeThroughputFrame();
           
         } catch (e) {
           print('Error during loop tick: $e');
@@ -155,23 +157,6 @@ class Loop {
         analyzer?.incrementTotalPerNode();
 
         Car forCar = snapshot[i];
-        // Compute how many cars and RSUs are in sensing range of this car
-        int carsInRange = 0;
-        int rsusInRange = 0;
-        final rangeSqCar = forCar.sensingRange * forCar.sensingRange;
-        for (final other in cars) {
-          if (other.id == forCar.id) continue;
-          final dx = other.position.x - forCar.position.x;
-          final dy = other.position.y - forCar.position.y;
-          if (dx * dx + dy * dy <= rangeSqCar) carsInRange++;
-        }
-        for (final other in rsus) {
-          final dx = other.position.x - forCar.position.x;
-          final dy = other.position.y - forCar.position.y;
-          if (dx * dx + dy * dy <= rangeSqCar) rsusInRange++;
-        }
-        forCar.seenCarsCount = carsInRange;
-        forCar.seenRsusCount = rsusInRange;
         Signal? signalToRead = medium.sense(
             forCar.position.x,
             forCar.position.y,
@@ -181,8 +166,9 @@ class Loop {
           analyzer?.incrementBusyMedium();
 
           if (signalToRead.destinationId == forCar.id) {
-            // print('$tick-${forCar.id}-${forCar.state})\t🚗\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${forCar.nav}/${forCar.timer}/${forCar.backoffSlots} || ${forCar.timeout}/${forCar.consecutiveCollisions})');
+            // print('$tick-${forCar.id}-${forCar.state})\t🚗\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${forCar.nav}/${forCar.ifsTimer}/${forCar.backoffSlots} || ${forCar.timeout}/${forCar.consecutiveCollisions})');
           } else {
+            // print('$tick-${forCar.id}-${forCar.state})\t🚗\t👁️\tMISS\t: visible signal ${signalToRead.type}/${signalToRead.data} from ${signalToRead.ownerId} to ${signalToRead.destinationId}');
           }
         }
 
@@ -198,6 +184,9 @@ class Loop {
         if (signal != null) {
           print('$tick-${forCar.id}-${forCar.state})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
           medium.transmit(signal);
+          if (signal.type == SignalType.rts)
+            analyzer?.incrementRts();
+          else if (signal.type == SignalType.ack) analyzer?.incrementAcks();
         }
 
 
@@ -211,23 +200,7 @@ class Loop {
     ///////////////
     try {
       for (final rsu in rsus) {
-        // Compute how many cars and RSUs are in sensing range of this rsu
-        int carsInRange = 0;
-        int rsusInRange = 0;
-        final rangeSqRsu = rsu.sensingRange * rsu.sensingRange;
-        for (final car in cars) {
-          final dx = car.position.x - rsu.position.x;
-          final dy = car.position.y - rsu.position.y;
-          if (dx * dx + dy * dy <= rangeSqRsu) carsInRange++;
-        }
-        for (final other in rsus) {
-          if (other.id == rsu.id) continue;
-          final dx = other.position.x - rsu.position.x;
-          final dy = other.position.y - rsu.position.y;
-          if (dx * dx + dy * dy <= rangeSqRsu) rsusInRange++;
-        }
-        rsu.seenCarsCount = carsInRange;
-        rsu.seenRsusCount = rsusInRange;
+
         analyzer?.incrementTotalPerNode();
 
         Signal? signalToRead = medium.sense(
@@ -239,9 +212,9 @@ class Loop {
           analyzer?.incrementBusyMedium();
 
           if (signalToRead.destinationId == rsu.id || signalToRead.destinationId == -1) {
-            print('$tick-${rsu.id}-${rsu.state})\t🚦\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${rsu.nav}/${rsu.ifsTimer}/${rsu.backoffSlots} || ${rsu.timeout}/${rsu.consecutiveCollisions})');
+            // print('$tick-${rsu.id}-${rsu.state})\t🚦\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${rsu.nav}/${rsu.ifsTimer}/${rsu.backoffSlots} || ${rsu.timeout}/${rsu.consecutiveCollisions})');
           } else {
-
+            // print('$tick-${rsu.id}-${rsu.state})\t🚦\t👁️\tMISS\t: visible signal ${signalToRead.type}/${signalToRead.data} from ${signalToRead.ownerId} to ${signalToRead.destinationId}');
           }
         }
 
@@ -253,6 +226,9 @@ class Loop {
         if (signal != null) {
           print('$tick-${rsu.id}-${rsu.state})\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
           medium.transmit(signal);
+          if (signal.type == SignalType.rts)
+            analyzer?.incrementRts();
+          else if (signal.type == SignalType.ack) analyzer?.incrementAcks();
         }
       }
     } catch (_) {
@@ -272,9 +248,11 @@ class Loop {
 
     analyzer?.incrementTotal();
 
+  /*
     if (tick % 100 == 0) {
       medium.getSignalsInfo();
     }
+  */
 
   }
 }

@@ -1,0 +1,406 @@
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 50): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================
+--- ANALYZER LOG ---
+Simulation Configuration:
+Cars: 6
+RSUs: 4
+FPS: 10
+MDP Enabled: true
+---------------------
+
+Soft resets every N/A slots
+Hard resets every N/A slots
+
+Average Idle: 0%
+Average free cars: 0
+Average Busy Medium: 0%
+Average different cars processed (free OR answered): 0.00
+Average throughput (acks/rts): 0.000
+---------------------
+
+
+=== MDP LEARNING PROGRESS ===
+
+--- Car 0 ---
+Training Episodes: 200
+Average Reward: 6.50
+Recent Average (last 20 episodes): 3.00
+Reward slope (last 100): 0.00000
+Final Parameters:
+  epsilon: 0.050
+=============================

@@ -11,6 +11,7 @@ class RSU extends Entity {
 
   Car? communicationCar;
   Set<(Car, int)> knownCars = {};
+  final Set<int> seenCarIds = {};
 
 
   RSU({required Position position, required int id, required int range, required int sensingRange, int timer = 0, super.analyzer}) : super(id, position, range, sensingRange, timer) {
@@ -27,6 +28,8 @@ class RSU extends Entity {
           knownCars.remove((car, t));
         }
       }
+      // Reset per-interval seen car ids at the end of a subframe
+      seenCarIds.clear();
     }
 
     return Measurement(state: state, stage: stage, free: false, answered: requestedExit, softReset: softRst, hardReset: hardRst);
@@ -67,6 +70,7 @@ class RSU extends Entity {
       timeout = 0;
       nextState(NodeState.idle);
       requestedExit = false;
+      communicationOngoing = false;
     }
 
   }
@@ -115,6 +119,8 @@ class RSU extends Entity {
       if (signalToRead.car != null) {
         communicationCar = signalToRead.car;
         updateKnowledge(signalToRead.car!);
+        // Track seen cars in this subframe
+        seenCarIds.add(signalToRead.car!.id);
       }
 
       if (state != NodeState.querying && validateSignal(signalToRead)) {
@@ -163,7 +169,7 @@ class RSU extends Entity {
         confirmedSend = true;
 
         final txRange = range;
-        return Signal(
+        final signal = Signal(
           ownerId: id,
           destinationId: pal,
           x: position.x,
@@ -171,13 +177,15 @@ class RSU extends Entity {
           type: SignalType.cts,
           txRange: txRange,
         );
+        return signal;
       } else if (stage == TalkingStage.response) {
         stage = TalkingStage.ack;
         requestedSend = false;
         confirmedSend = true;
+        communicationOngoing = true;
 
         final txRange = range;
-        return Signal(
+        final signal = Signal(
           ownerId: id,
           destinationId: pal,
           x: position.x,
@@ -187,6 +195,7 @@ class RSU extends Entity {
           communicationOngoing: true,
           txRange: txRange,
         );
+        return signal;
       }
     }
 
@@ -209,6 +218,7 @@ class RSU extends Entity {
         if (stage == TalkingStage.idle || stage == TalkingStage.rts) {
           stage = TalkingStage.cts;
         } else if (stage == TalkingStage.query) {
+          communicationOngoing = true;
           stage = TalkingStage.response;
         } else if (stage == TalkingStage.ack) {
           stage = TalkingStage.idle;

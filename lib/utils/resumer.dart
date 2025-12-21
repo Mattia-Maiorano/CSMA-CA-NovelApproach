@@ -26,8 +26,7 @@ class _ResumerPageState extends State<ResumerPage> {
   int? _selectedNode;
   List<String> _availableFields = [];
   final Set<String> _selectedFields = {};
-  bool _plotOverlaysAbsolute = false;
-  bool _showRewardAverage = true;
+  // Plot overlays absolute removed — overlays are mapped to reward range by default
   int _rewardAverageWindow = 5;
   // Debugging UI
   final List<String> _debugLines = [];
@@ -184,15 +183,17 @@ class _ResumerPageState extends State<ResumerPage> {
           : Map<String, dynamic>.from(row['NODE${_selectedNode}_state'] as Map);
       if (par != null) keys.addAll(par.keys.map((k) => 'par:$k'));
       if (st != null) keys.addAll(st.keys.map((k) => 'st:$k'));
+      if (row.containsKey('env_throughput')) keys.add('env:throughput');
+      if (row.containsKey('env_acks')) keys.add('env:acks');
+      if (row.containsKey('env_rts')) keys.add('env:rts');
+      // detect environment-level throughput field if present
+      if (row.containsKey('env_throughput')) keys.add('env:throughput');
     }
-    // Filter using analyzer's agent fields if possible
-    final nodeType = _selectedNode != null
-        ? _detectNodeTypeFromSteps(_selectedNode!)
-        : 'Car';
-    final allowed = (Analyzer.agentUsedFields[nodeType] ?? []).toSet();
-    // Keep params and allowed state features
+    // Filter fields we display to: parameters (par:), states (st:) and environment (env:)
     final filtered =
-        keys.where((k) => k.startsWith('par:') || allowed.contains(k)).toList()
+      keys
+        .where((k) => k.startsWith('par:') || k.startsWith('st:') || k.startsWith('env:'))
+        .toList()
           ..sort();
     return filtered;
   }
@@ -276,6 +277,34 @@ class _ResumerPageState extends State<ResumerPage> {
             final boolVal = v as bool;
             spots.add(FlSpot(i.toDouble(), boolVal ? 1.0 : 0.0));
           }
+          } else if (key.startsWith('env:')) {
+            // e.g. env:throughput -> row['env_throughput'] per step
+            if (row.containsKey('env_throughput') && row['env_throughput'] != null) {
+              final v = row['env_throughput'];
+              final num? maybeNum = v as num?;
+              if (maybeNum != null) spots.add(FlSpot(i.toDouble(), maybeNum.toDouble()));
+            }
+        }
+      } else if (key.startsWith('env:')) {
+        // Environment-level features like env:throughput, env:acks, env:rts
+        final t = row['env_throughput'];
+        final a = row['env_acks'];
+        final r = row['env_rts'];
+        if (key == 'env:throughput') {
+          if (t != null) {
+            final num? maybeNum = t as num?;
+            if (maybeNum != null) spots.add(FlSpot(i.toDouble(), maybeNum.toDouble()));
+          }
+        } else if (key == 'env:acks') {
+          if (a != null) {
+            final num? maybeNum = a as num?;
+            if (maybeNum != null) spots.add(FlSpot(i.toDouble(), maybeNum.toDouble()));
+          }
+        } else if (key == 'env:rts') {
+          if (r != null) {
+            final num? maybeNum = r as num?;
+            if (maybeNum != null) spots.add(FlSpot(i.toDouble(), maybeNum.toDouble()));
+          }
         }
       }
     }
@@ -324,16 +353,39 @@ class _ResumerPageState extends State<ResumerPage> {
     return spots;
   }
 
+  List<FlSpot> _getEpsilonChangeSpots(int nodeId) {
+    final steps = _mdpRoot()?['steps'] as List<dynamic>?;
+    if (steps == null) return [];
+    final spots = <FlSpot>[];
+    for (var i = 0; i < steps.length; i++) {
+      final row = Map<String, dynamic>.from(steps[i] as Map<String, dynamic>);
+      final change = row['NODE${nodeId}_epsilon_change'];
+      if (change != null) {
+        final rew = row['NODE${nodeId}_rew'];
+        if (rew != null) {
+          final v = (rew as num).toDouble();
+          spots.add(FlSpot(i.toDouble(), v));
+        } else {
+          // fallback
+          spots.add(FlSpot(i.toDouble(), 0.0));
+        }
+      }
+    }
+    return spots;
+  }
+
   List<FlSpot> _getRewardAverageSpots(int nodeId, int window) {
     final raw = _getRewardSpots(nodeId);
     if (raw.isEmpty) return [];
     if (window <= 1) return raw;
     final avg = <FlSpot>[];
+    final half = window ~/ 2;
     for (var i = 0; i < raw.length; i++) {
-      final start = math.max(0, i - window + 1);
+      final start = math.max(0, i - half);
+      final end = math.min(raw.length - 1, i + half);
       double sum = 0.0;
       int count = 0;
-      for (var j = start; j <= i; j++) {
+      for (var j = start; j <= end; j++) {
         sum += raw[j].y;
         count++;
       }
@@ -373,36 +425,7 @@ class _ResumerPageState extends State<ResumerPage> {
     return {'param': param, 'mag': mag};
   }
 
-  /// Group action spots by parameter (timeout/broadcast/jitter/none) and encode magnitude as Y offset.
-  Map<String, List<FlSpot>> _getActionSeriesGrouped(int nodeId) {
-    final steps = _mdpRoot()?['steps'] as List<dynamic>?;
-    if (steps == null) return {};
-    final Map<String, List<FlSpot>> series = {
-      'timeout': [],
-      'broadcast': [],
-      'jitter': [],
-      'none': [],
-    };
-    // Baselines for each parameter to visually separate them in the chart
-    final baselines = {
-      'timeout': 0.0,
-      'broadcast': 2.0,
-      'jitter': 4.0,
-      'none': 6.0,
-    };
-    for (var i = 0; i < steps.length; i++) {
-      final row = Map<String, dynamic>.from(steps[i] as Map<String, dynamic>);
-      final act = row['NODE${nodeId}_act'] as String?;
-      if (act == null || act.isEmpty) continue;
-      final parsed = _parseActionString(act);
-      final p = parsed['param'] as String;
-      final mag = parsed['mag'] as double;
-      final base = baselines[p] ?? 0.0;
-      final y = base + mag;
-      series[p]?.add(FlSpot(i.toDouble(), y));
-    }
-    return series;
-  }
+  // no parameter chart; reward + overlays only
 
   // no parameter chart; reward + overlays only
 
@@ -482,6 +505,7 @@ class _ResumerPageState extends State<ResumerPage> {
 
     // The chart focuses on reward; overlays are selected fields only
     final barSeries = <LineChartBarData>[];
+    List<FlSpot> avgSpots = [];
     barSeries.add(
       LineChartBarData(
         spots: spots,
@@ -490,22 +514,41 @@ class _ResumerPageState extends State<ResumerPage> {
         color: Colors.green,
       ),
     );
-    // Reward moving average
-    if (_showRewardAverage && spots.isNotEmpty) {
-      final avgSpots = _getRewardAverageSpots(
-        _selectedNode!,
-        _rewardAverageWindow,
-      );
-      barSeries.add(
-        LineChartBarData(
-          spots: avgSpots,
-          isCurved: false,
-          color: Colors.black,
-          barWidth: 2,
-          dotData: FlDotData(show: false),
-        ),
-      );
+    // Reward moving average: compute and plot centered moving average (RewAvg)
+    if (spots.isNotEmpty) {
+      avgSpots = _getRewardAverageSpots(_selectedNode!, _rewardAverageWindow);
+      if (avgSpots.isNotEmpty) {
+        barSeries.add(
+          LineChartBarData(
+            spots: avgSpots,
+            isCurved: false,
+            color: Colors.black,
+            barWidth: 2,
+            dotData: FlDotData(show: false),
+          ),
+        );
+      }
     }
+      // Add epsilon change markers as purple dots
+      final epsilonChangeSpots = _getEpsilonChangeSpots(_selectedNode!);
+      if (epsilonChangeSpots.isNotEmpty) {
+        barSeries.add(
+          LineChartBarData(
+            spots: epsilonChangeSpots,
+            isCurved: false,
+            color: Colors.purple,
+            dotData: FlDotData(
+              show: true,
+              getDotPainter: (spot, percent, barData, index) => FlDotCirclePainter(
+                radius: 4.0,
+                color: Colors.purple,
+                strokeWidth: 0,
+              ),
+            ),
+            barWidth: 0,
+          ),
+        );
+      }
     // Overlay each selected field (state or param)
     final colorPool = [
       Colors.red,
@@ -517,8 +560,7 @@ class _ResumerPageState extends State<ResumerPage> {
     ];
     int colorIndex = 0;
     final overlayCorrs = <Widget>[];
-    double? overlayMin;
-    double? overlayMax;
+    // No absolute overlay plotting: overlay values are mapped to reward range
     for (final key in _selectedFields) {
       final featureSpots = _getFeatureSpots(_selectedNode!, key);
       if (featureSpots.isNotEmpty) {
@@ -535,19 +577,7 @@ class _ResumerPageState extends State<ResumerPage> {
           'Feature $key raw range: min=$fsMin, max=$fsMax, avg=$fsAvg',
         );
         List<FlSpot> mapped;
-        if (_plotOverlaysAbsolute) {
-          mapped = featureSpots; // plot raw values
-          final fmin = featureSpots
-              .map((s) => s.y)
-              .reduce((a, b) => a < b ? a : b);
-          final fmax = featureSpots
-              .map((s) => s.y)
-              .reduce((a, b) => a > b ? a : b);
-          overlayMin = overlayMin == null ? fmin : math.min(overlayMin, fmin);
-          overlayMax = overlayMax == null ? fmax : math.max(overlayMax, fmax);
-        } else {
-          mapped = _mapSeriesToTargetRange(spots, featureSpots);
-        }
+        mapped = _mapSeriesToTargetRange(spots, featureSpots);
         final color = colorPool[colorIndex % colorPool.length];
         colorIndex++;
         barSeries.add(
@@ -574,8 +604,8 @@ class _ResumerPageState extends State<ResumerPage> {
     corrWidgets.addAll(overlayCorrs);
 
     Widget corrRow = const SizedBox.shrink();
-    // Add a legend entry for reward average if enabled
-    if (_showRewardAverage) {
+    // Reward average legend (show if average computed)
+    if (avgSpots.isNotEmpty) {
       corrWidgets.add(
         Padding(
           padding: const EdgeInsets.only(right: 12.0),
@@ -604,16 +634,27 @@ class _ResumerPageState extends State<ResumerPage> {
       );
     }
 
-    // If plotting overlays on absolute scale, expand display min/max to include overlay raw values
-    double finalDisplayMinY = displayMinY;
-    double finalDisplayMaxY = displayMaxY;
-    if (_plotOverlaysAbsolute && overlayMin != null && overlayMax != null) {
-      finalDisplayMinY = math.min(finalDisplayMinY, overlayMin);
-      finalDisplayMaxY = math.max(finalDisplayMaxY, overlayMax);
-      _appendDebug(
-        'Display range expanded for absolute overlays: [$finalDisplayMinY, $finalDisplayMaxY]',
+    // If epsilon change events exist, add a small legend entry
+    if (epsilonChangeSpots.isNotEmpty) {
+      corrRow = Padding(
+        padding: const EdgeInsets.only(top: 4.0),
+        child: Row(
+          children: [
+            Container(width: 10, height: 10, color: Colors.purple),
+            const SizedBox(width: 6),
+            const Text('Epsilon change', style: TextStyle(fontSize: 12)),
+            const SizedBox(width: 12),
+            corrRow,
+          ],
+          mainAxisAlignment: MainAxisAlignment.start,
+          crossAxisAlignment: CrossAxisAlignment.center,
+        ),
       );
     }
+
+    // final display min/max respects reward range and small padding
+    double finalDisplayMinY = displayMinY;
+    double finalDisplayMaxY = displayMaxY;
 
     final chartWidget = SizedBox(
       height: 220,
@@ -625,6 +666,7 @@ class _ResumerPageState extends State<ResumerPage> {
           maxY: finalDisplayMaxY,
           titlesData: FlTitlesData(show: true),
           lineBarsData: barSeries,
+          extraLinesData: ExtraLinesData(horizontalLines: [], verticalLines: [], extraLinesOnTop: true),
         ),
       ),
     );
@@ -637,118 +679,7 @@ class _ResumerPageState extends State<ResumerPage> {
         corrRow,
         // param stats row
         _buildParamStatsRow(),
-        const SizedBox(height: 4),
-        // action plot if available
-        Builder(
-          builder: (context) {
-            final actionSeries = _getActionSeriesGrouped(_selectedNode!);
-            if (actionSeries.values.every((s) => s.isEmpty))
-              return const SizedBox.shrink();
-            final colorMap = {
-              'timeout': Colors.red,
-              'broadcast': Colors.blue,
-              'jitter': Colors.orange,
-              'none': Colors.grey,
-            };
-            final List<LineChartBarData> actionSeriesBars = [];
-            double globalMinY = double.infinity;
-            double globalMaxY = double.negativeInfinity;
-            final baselines = {
-              'timeout': 0.0,
-              'broadcast': 2.0,
-              'jitter': 4.0,
-              'none': 6.0,
-            };
-            actionSeries.forEach((p, spotsList) {
-              if (spotsList.isEmpty) return;
-              final c = colorMap[p] ?? Colors.black;
-              final base = baselines[p] ?? 0.0;
-              actionSeriesBars.add(
-                LineChartBarData(
-                  spots: spotsList,
-                  isCurved: false,
-                  color: c,
-                  barWidth: 2,
-                  isStrokeCapRound: true,
-                  dotData: FlDotData(
-                    show: true,
-                    getDotPainter: (spot, percent, barData, index) {
-                      final r = 3 + ((spot.y - base).abs() * 4.0);
-                      return FlDotCirclePainter(
-                        radius: r,
-                        color: c,
-                        strokeWidth: 0,
-                      );
-                    },
-                  ),
-                ),
-              );
-              final localMin = spotsList
-                  .map((s) => s.y)
-                  .reduce((a, b) => a < b ? a : b);
-              final localMax = spotsList
-                  .map((s) => s.y)
-                  .reduce((a, b) => a > b ? a : b);
-              if (localMin < globalMinY) globalMinY = localMin;
-              if (localMax > globalMaxY) globalMaxY = localMax;
-            });
-            // fallback ranges
-            if (!globalMinY.isFinite) globalMinY = -1.0;
-            if (!globalMaxY.isFinite) globalMaxY = 7.0;
-            return SizedBox(
-              height: 100,
-              child: Column(
-                children: [
-                  Expanded(
-                    child: LineChart(
-                      LineChartData(
-                        minX: 0,
-                        maxX: spots.last.x,
-                        minY: globalMinY - 0.5,
-                        maxY: globalMaxY + 0.5,
-                        titlesData: FlTitlesData(show: false),
-                        lineBarsData: actionSeriesBars,
-                      ),
-                    ),
-                  ),
-                  // legend showing parameter colors and magnitude mapping
-                  Padding(
-                    padding: const EdgeInsets.only(top: 4.0),
-                    child: SingleChildScrollView(
-                      scrollDirection: Axis.horizontal,
-                      child: Row(
-                        children: [
-                          for (final entry in actionSeries.entries.where(
-                            (e) => e.value.isNotEmpty,
-                          ))
-                            Padding(
-                              padding: const EdgeInsets.only(right: 16.0),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 10,
-                                    height: 10,
-                                    color: colorMap[entry.key],
-                                  ),
-                                  const SizedBox(width: 4),
-                                  Text(
-                                    entry.key[0].toUpperCase() +
-                                        entry.key.substring(1),
-                                    style: const TextStyle(fontSize: 11),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      ),
-                    ),
-                  ),
-                  // Magnitude is shown by dot size; no separate legend necessary
-                ],
-              ),
-            );
-          },
-        ),
+        const SizedBox.shrink(),
         // action legend is simplified; no per-action list
       ],
     );
@@ -908,6 +839,9 @@ class _ResumerPageState extends State<ResumerPage> {
 
   String _humanFeatureName(String f) {
     if (f == 'rew' || f == 'reward' || f == 'Reward') return 'Reward';
+    if (f == 'env:throughput') return 'Env Throughput';
+    if (f == 'env:acks') return 'Env ACKs';
+    if (f == 'env:rts') return 'Env RTS';
     if (f.startsWith('par:')) return f.substring(4);
     if (f.startsWith('st:')) return f.substring(3);
     return f;
@@ -1115,32 +1049,20 @@ class _ResumerPageState extends State<ResumerPage> {
                 ],
               ),
               const SizedBox(height: 6),
-              // Controls for plotting behavior: overlay absolute scale and reward average
+              // Controls for plotting behavior: reward average window (analysis only)
               Row(
                 crossAxisAlignment: CrossAxisAlignment.center,
                 children: [
-                  const Text('Plot overlays absolute'),
-                  const SizedBox(width: 8),
-                  Switch(
-                    value: _plotOverlaysAbsolute,
-                    onChanged: (v) => setState(() => _plotOverlaysAbsolute = v),
-                  ),
-                  const SizedBox(width: 12),
-                  const Text('Show reward avg'),
-                  const SizedBox(width: 8),
-                  Switch(
-                    value: _showRewardAverage,
-                    onChanged: (v) => setState(() => _showRewardAverage = v),
-                  ),
-                  const SizedBox(width: 12),
+                  // plotting options simplified: overlays mapped to reward range by default
+                  // Avg window is configurable in code for analyses (no visual overlay)
                   const Text('Avg window'),
                   const SizedBox(width: 8),
                   SizedBox(
                     width: 140,
                     child: Slider(
                       min: 1,
-                      max: 25,
-                      divisions: 24,
+                      max: 1000,
+                      divisions: 25,
                       inactiveColor: Colors.grey,
                       activeColor: Colors.black,
                       label: _rewardAverageWindow.toString(),
