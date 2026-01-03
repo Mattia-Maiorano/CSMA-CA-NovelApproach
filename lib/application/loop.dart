@@ -115,9 +115,7 @@ class Loop {
       int run = 0;
       while (_running) {
         if (run >= MAX_EPISODES) {
-          print(
-            "Reached maximum number of episodes ($MAX_EPISODES). Stopping loop.",
-          );
+          print("Reached maximum number of episodes ($MAX_EPISODES). Stopping loop.");
           stop();
           break;
         }
@@ -199,22 +197,17 @@ class Loop {
         final Signal? signal = stepProd.$1;
         final Measurement measurement = stepProd.$2;
 
-        if (measurement.answered && !processedCars.contains(forCar.id))
-          processedCars.add(forCar.id);
-        if (measurement.free && !freeToMoveCars.contains(forCar.id))
-          freeToMoveCars.add(forCar.id);
+        if (measurement.answered && !processedCars.contains(forCar.id)) processedCars.add(forCar.id);
+        if (measurement.free && !freeToMoveCars.contains(forCar.id)) freeToMoveCars.add(forCar.id);
         analyzer?.update(measurement);
         updatedCars.add(snapshot[i]);
 
         if (signal != null) {
-          print(
-            '$tick-${forCar.id}-${forCar.state})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}',
-          );
+          print('$tick-${forCar.id}-${forCar.state})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
           medium.transmit(signal);
           if (signal.type == SignalType.rts)
             analyzer?.incrementRts();
-          else if (signal.type == SignalType.ack)
-            analyzer?.incrementAcks();
+          else if (signal.type == SignalType.ack) analyzer?.incrementAcks();
         }
       }
     } catch (_) {
@@ -244,14 +237,11 @@ class Loop {
         analyzer?.update(measurement);
 
         if (signal != null) {
-          print(
-            '$tick-${rsu.id}-${rsu.state})\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}',
-          );
+          print('$tick-${rsu.id}-${rsu.state})\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
           medium.transmit(signal);
           if (signal.type == SignalType.rts)
             analyzer?.incrementRts();
-          else if (signal.type == SignalType.ack)
-            analyzer?.incrementAcks();
+          else if (signal.type == SignalType.ack) analyzer?.incrementAcks();
         }
       }
     } catch (_) {
