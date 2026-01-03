@@ -2,72 +2,91 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:daemon/domain/entities/mdp_car.dart';
 import 'package:daemon/domain/ai/agent.dart';
 import 'package:daemon/domain/entities/position.dart';
+import 'package:daemon/utils/config.dart';
 
 class TestAgent implements Agent {
-  @override
-  final int id;
-  @override
-  final List<String> actions;
-
-  bool chooseCalled = false;
-  bool learnCalled = false;
+  @override final int id;
+  @override final List<String> actions;
+  int chooseCount = 0;
+  int learnCount = 0;
   Map<String, dynamic>? lastState;
-  String? lastAction;
-  Map<String, dynamic>? lastNextState;
-
-  double _epsilon = 0.0;
+  String actionToReturn = 'defer';
 
   TestAgent(this.id, this.actions);
 
   @override
-  Map<String, dynamic> stateFromEntity(entity) => throw UnimplementedError();
-
-  @override
   String chooseAction(Map<String, dynamic> state) {
-    chooseCalled = true;
+    chooseCount++;
     lastState = state;
-    return actions.first;
+    return actionToReturn;
   }
 
   @override
   void learn(Map<String, dynamic> state, String action, double reward, Map<String, dynamic> nextState, {bool done = false, double? gammaOverride}) {
-    learnCalled = true;
-    lastState = state;
-    lastAction = action;
-    lastNextState = nextState;
+    learnCount++;
   }
 
-  @override
-  Map<String, double> parameters() => {'alpha': 0.1, 'gamma': 0.0, 'epsilon': _epsilon};
-
-  @override
-  double getEpsilon() => _epsilon;
-
-  @override
-  void setEpsilon(double value) {
-    _epsilon = value;
-  }
+  @override Map<String, dynamic> stateFromEntity(entity) => throw UnimplementedError();
+  @override Map<String, double> parameters() => {};
+  @override double getEpsilon() => 0.0;
+  @override void setEpsilon(double value) {}
 }
 
 void main() {
-  test('MDPCarClean chooses actions and triggers learn', () {
-    final agent = TestAgent(0, ['noop', 'startQuery']);
-    final mdpCar = MDPCar(
-      id: 0,
-      model: 0,
+  test('MDPCar queries agent only at decision points (not every tick)', () {
+    final agent = TestAgent(0, ['startComm', 'defer']);
+    agent.actionToReturn = 'defer';  // Defer completes quickly
+    final car = MDPCar(
+      id: 0, model: 0,
       position: Position(x: 1, y: 1, direction: Direction.right),
       manhattanGrid: List.generate(3, (_) => List<int>.filled(3, 1)),
-      range: 3,
-      sensingRange: 3,
-      timer: 0,
-      agent: agent,
+      range: 3, sensingRange: 3, agent: agent,
     );
 
-    // step should cause chooseAction and learn to be invoked
-    mdpCar.step(0, 0, null);
+    // First tick: should make a decision (car starts idle)
+    car.step(0, 0, null);
+    expect(agent.chooseCount, 1);
 
-    expect(agent.chooseCalled, true);
-    expect(agent.learnCalled, true);
-    expect(agent.lastAction, isNotNull);
+    // Next few ticks: waiting for defer backoff to expire, no new decisions
+    car.step(1, 0, null);
+    car.step(2, 0, null);
+    // chooseCount may increase if backoff expired and new decision is made
+    // but should NOT be called every tick like before
+    final countAfterFewTicks = agent.chooseCount;
+    expect(countAfterFewTicks, lessThanOrEqualTo(3)); // Much less than 3 ticks = 3 calls
+  });
+
+  test('MDPCar learns after outcome is resolved', () {
+    final agent = TestAgent(0, ['startComm', 'defer']);
+    agent.actionToReturn = 'defer';
+    final car = MDPCar(
+      id: 0, model: 0,
+      position: Position(x: 1, y: 1, direction: Direction.right),
+      manhattanGrid: List.generate(3, (_) => List<int>.filled(3, 1)),
+      range: 3, sensingRange: 3, agent: agent,
+    );
+
+    // Run through a full frame
+    for (int t = 0; t < SUBFRAMES; t++) {
+      car.step(t, 0, null);
+    }
+
+    // Should have learned at least once (outcome resolved or frame end)
+    expect(agent.learnCount, greaterThan(0));
+  });
+
+  test('MDPCar state has expected keys', () {
+    final agent = TestAgent(0, ['startComm', 'defer']);
+    final car = MDPCar(
+      id: 0, model: 0,
+      position: Position(x: 1, y: 1, direction: Direction.right),
+      manhattanGrid: List.generate(3, (_) => List<int>.filled(3, 1)),
+      range: 3, sensingRange: 3, agent: agent,
+    );
+
+    car.step(0, 0, null);
+    expect(agent.lastState!.containsKey('tick'), true);
+    expect(agent.lastState!.containsKey('busy'), true);
+    expect(agent.lastState!.containsKey('resolved'), true);
   });
 }

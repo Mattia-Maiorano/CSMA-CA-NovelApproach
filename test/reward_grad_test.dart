@@ -1,21 +1,26 @@
 import 'package:flutter_test/flutter_test.dart';
 import 'package:daemon/utils/analyzer.dart';
 import 'package:daemon/domain/ai/q_agent.dart';
+import 'package:daemon/utils/config.dart';
 
 void main() {
-  test('Analyzer triggers epsilon increase on negative reward gradient', () {
+  test('Analyzer triggers epsilon increase when recent window avg < previous window avg', () {
     final analyzer = Analyzer();
     analyzer.enableMDPTracking();
     final agent = QAgent(0, ['noop', 'startQuery']);
     analyzer.registerMdpAgent(0, agent);
-    // ensure the agent is registered
     expect(analyzer.getRegisteredMdpAgent(0), isNotNull);
 
-    // record 200 episodes of rewards to match the default REWARD_GRAD_WINDOW (100)
+    // Need 2 * EPSILON_WINDOW frames
+    final w = EPSILON_WINDOW;
     final rewards = <double>[];
-    for (int i = 0; i < 100; i++) rewards.add(10.0);
-    for (int i = 0; i < 100; i++) rewards.add(-50.0);
-    // Track whether epsilon was increased at any point during the sequence
+    // First window: high rewards
+    for (int i = 0; i < w; i++) rewards.add(10.0);
+    // Second window: low rewards (should trigger)
+    for (int i = 0; i < w; i++) rewards.add(2.0);
+    // Third window: even lower (should trigger again after cooldown)
+    for (int i = 0; i < w; i++) rewards.add(1.0);
+
     bool seenIncrease = false;
     double prevEps = agent.getEpsilon();
     for (final r in rewards) {
@@ -25,13 +30,31 @@ void main() {
       prevEps = curr;
     }
 
-    // At least one increase event must have happened inside the recorded rewards
     expect(seenIncrease, true);
-    // test cooldown: immediate next update should not increase due to cooldown (it may slightly decay)
-    final prev = prevEps;
-    // feed a single more episode with bad reward to try to retrigger
-    analyzer.recordMDPProgress(0, 'Car', 1.0, {}, {'epsilon': 0.05});
-    final after = agent.getEpsilon();
-    expect(after <= prev, true);
+  });
+
+  test('Analyzer respects cooldown after epsilon increase', () {
+    final analyzer = Analyzer();
+    analyzer.enableMDPTracking();
+    final agent = QAgent(0, ['noop', 'startQuery']);
+    analyzer.registerMdpAgent(0, agent);
+
+    final w = EPSILON_WINDOW;
+    // First window: high rewards
+    for (int i = 0; i < w; i++) {
+      analyzer.recordMDPProgress(0, 'Car', 10.0, {}, {});
+    }
+    // Second window: low rewards (triggers)
+    for (int i = 0; i < w; i++) {
+      analyzer.recordMDPProgress(0, 'Car', 2.0, {}, {});
+    }
+    final epsAfterTrigger = agent.getEpsilon();
+
+    // Immediately try another bad window - should be blocked by cooldown
+    final epsBeforeNext = agent.getEpsilon();
+    analyzer.recordMDPProgress(0, 'Car', 1.0, {}, {});
+    final epsAfterOne = agent.getEpsilon();
+    // Epsilon should not have jumped (may decay slightly)
+    expect(epsAfterOne <= epsBeforeNext, true);
   });
 }

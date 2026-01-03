@@ -1,64 +1,109 @@
 import 'dart:math';
 
 import 'package:daemon/domain/entities/classic_rsu.dart';
-import 'package:daemon/domain/entities/position.dart';
+import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/domain/ai/agent.dart';
 import 'package:daemon/utils/measurement.dart';
 import 'package:daemon/utils/config.dart';
 
+/// Decision-based MDP RSU: queries agent only at decision points, learns after outcome.
 class MDPRSU extends RSU {
   final Agent agent;
-  Map<String, dynamic>? _lastState;
-  String? _lastAction;
 
-  // local knowledge for the RSU agent
-  int _responsesGivenInterval = 0;
-  int prevKnownCars = 0;
-  final Set<int> _answeredCars = {};
+  // Decision tracking
+  Map<String, dynamic>? _decisionState;  // State when decision was made
+  String? _pendingAction;                 // Action waiting for outcome
+  bool _waitingOutcome = false;           // Whether we're waiting for an outcome
 
-  MDPRSU({required int id, required Position position, required int range, required int sensingRange, int timer = 0, super.analyzer, required this.agent})
-      : super(id: id, position: position, range: range, sensingRange: sensingRange, timer: timer) {
+  // Response tracking
+  final Set<int> _answered = {};
+  int _responsesAtDecision = 0;          // Responses when decision was made
+
+  MDPRSU({
+    required super.id,
+    required super.position,
+    required super.range,
+    required super.sensingRange,
+    super.timer = 0,
+    super.analyzer,
+    required this.agent,
+  }) {
     analyzer?.registerMdpAgent(id, agent);
-    // Register the entity to allow visual markers for epsilon changes
     analyzer?.registerMdpEntity(id, this);
   }
 
-  Map<String, dynamic> _buildState() {
-    final int tickBin = (tick * 4) ~/ SUBFRAMES; // 0..3
-    // state for RSU MDP agents:
-    // - 'seenCars': number of unique cars seen during current subframe (episode)
-    // - 'prevKnownCars': number of cars in RSU's known list at the last subframe end
-    return {
-      'seenCars': seenCarIds.length,
-      'prevKnownCars': prevKnownCars,
-      'tickBin': tickBin,
-      'comm': communicationOngoing ? 1 : 0,
-    };
+  Map<String, dynamic> _state() => {
+    'tick': (tick * 4) ~/ SUBFRAMES,
+    'busy': nav > 0 ? 1 : 0,
+    'queue': (knownCars.length - _answered.length).clamp(0, 4),
+  };
+
+  /// Check if we're at a decision point: idle and medium free
+  bool _canDecide() =>
+      state == NodeState.idle && nav == 0 && !_waitingOutcome;
+
+  /// Check if the pending action's outcome is resolved
+  bool _outcomeResolved() {
+    if (!_waitingOutcome || _pendingAction == null) return false;
+
+    if (_pendingAction == 'ready') {
+      // Outcome: communication completed (back to idle) or collision
+      final commDone = state == NodeState.idle && stage == TalkingStage.idle;
+      final collision = softRst || hardRst;
+      // Also resolve if we gave a response
+      final gaveResponse = _answered.length > _responsesAtDecision;
+      return (commDone && gaveResponse) || collision;
+    } else if (_pendingAction == 'defer') {
+      // Outcome: backoff expired and back to idle
+      return backoffSlots <= 0 && state == NodeState.idle;
+    }
+    return false;
   }
 
-  void _applyAction(String action) {
-    switch (action) {
-      case 'noop':
-        break;
-      case 'defer':
-        backoffSlots = Random().nextInt(3) + 1;
-        break;
-      default:
-        break;
+  /// Non-linear congestion factor: penalties softened when many cars nearby
+  /// Returns value in (0, 1] - lower when more congested
+  double _congestionFactor() {
+    final n = knownCars.length;
+    // Quadratic scaling: 1/(1 + 0.5*n²)
+    // n=0: 1.0, n=1: 0.67, n=2: 0.33, n=3: 0.18, n=4: 0.11
+    return 1.0 / (1.0 + 0.5 * n * n);
+  }
+
+  /// Compute reward for the completed action
+  double _computeReward() {
+    double r = 0.0;
+    final newResponses = _answered.length - _responsesAtDecision;
+    final cf = _congestionFactor();
+
+    if (_pendingAction == 'ready') {
+      if (newResponses > 0) r += 2.0;             // Success: full reward
+      else if (softRst) r -= 0.5 * cf;            // Collision: scaled penalty
+      else if (hardRst) r -= 1.0 * cf;            // Hard reset: scaled penalty
+      else r -= 0.2 * cf;                         // Ready but no car: scaled penalty
+    } else if (_pendingAction == 'defer') {
+      r -= 0.1;                                   // Deferral: flat cost
     }
+
+    return r;
   }
 
   @override
   void handleState() {
+    // Decision point: agent chooses action only when it can actually act
+    if (_canDecide()) {
+      _decisionState = _state();
+      _pendingAction = agent.chooseAction(_decisionState!);
+      _waitingOutcome = true;
+      _responsesAtDecision = _answered.length;
+      analyzer?.recordMDPAction(id, _pendingAction!);
 
-    final state = _buildState();
-    final action = agent.chooseAction(state);
-    // print('$tick-$id-${state})\t$emoji\tSEL\t: action=$action state=$state');
-    analyzer?.recordMDPAction(id, action);
-    _applyAction(action);
-    _lastState = state;
-    _lastAction = action;
+      // Apply the action
+      if (_pendingAction == 'defer') {
+        backoffSlots = Random().nextInt(3) + 1;
+      }
+      // 'ready' = no action needed, just be available
+    }
 
     super.handleState();
   }
@@ -66,11 +111,9 @@ class MDPRSU extends RSU {
   @override
   void handleSignal(Signal? signalToRead) {
     if (signalToRead != null) {
-      if (signalToRead.type == SignalType.response) {
-        if (!_answeredCars.contains(signalToRead.ownerId)) {
-          _answeredCars.add(signalToRead.ownerId);
-          _responsesGivenInterval++;
-        }
+      // Track responses we've given
+      if (signalToRead.type == SignalType.response && !_answered.contains(signalToRead.ownerId)) {
+        _answered.add(signalToRead.ownerId);
       }
     }
     super.handleSignal(signalToRead);
@@ -79,13 +122,8 @@ class MDPRSU extends RSU {
   @override
   Signal? handleResponse() {
     final signal = super.handleResponse();
-
-    if (signal != null && signal.type == SignalType.response) {
-
-      if (!_answeredCars.contains(signal.ownerId)) {
-        _answeredCars.add(signal.ownerId);
-        _responsesGivenInterval++;
-      }
+    if (signal?.type == SignalType.response && !_answered.contains(signal!.ownerId)) {
+      _answered.add(signal.ownerId);
     }
     return signal;
   }
@@ -94,53 +132,37 @@ class MDPRSU extends RSU {
   Measurement specificStep() {
     final m = super.specificStep();
 
-    handleRewards();
+    // Check if outcome is resolved → learn immediately
+    if (_outcomeResolved()) {
+      final reward = _computeReward();
+      final nextState = _state();
+      final done = tick == SUBFRAMES - 1;
 
+      agent.learn(_decisionState!, _pendingAction!, reward, nextState, done: done);
+      analyzer?.recordMDPProgress(id, 'RSU', reward, nextState, agent.parameters());
+
+      // Reset decision tracking
+      _decisionState = null;
+      _pendingAction = null;
+      _waitingOutcome = false;
+    }
+
+    // End of frame cleanup
     if (tick == SUBFRAMES - 1) {
-      prevKnownCars = knownCars.length;
-      // snapshot seenCars for the previous interval; the base RSU clears seenCarIds in its specificStep
-      // we keep prevKnownCars here as the RSU-knowledge snapshot
-      _responsesGivenInterval = 0;
-      _answeredCars.clear();
+      // If still waiting for outcome at frame end, learn with appropriate reward
+      if (_waitingOutcome && _decisionState != null && _pendingAction != null) {
+        final newResponses = _answered.length - _responsesAtDecision;
+        final penalty = newResponses > 0 ? 1.0 : -1.0;
+        agent.learn(_decisionState!, _pendingAction!, penalty, _state(), done: true);
+        analyzer?.recordMDPProgress(id, 'RSU', penalty, _state(), agent.parameters());
+      }
+
+      _answered.clear();
+      _decisionState = null;
+      _pendingAction = null;
+      _waitingOutcome = false;
     }
 
     return m;
-  }
-
-  void handleRewards() {
-    double reward = 0.0;
-
-    // reward for communicating or sleeping
-    if (communicationOngoing) reward += 0.5;
-    else if (nav > 0) reward += 0.5;
-
-    // penalize if talking to a car that has already answered
-    if (_answeredCars.contains(communicationCar?.id)) reward -= 0.1;
-
-    // last tick big reward
-    if (tick == SUBFRAMES - 1 && knownCars.isNotEmpty) reward += _responsesGivenInterval / knownCars.length * 10 - 5 + knownCars.length * 1;
-
-    /*
-    // Functioning but based on full step logic
-    final carsSeenThisInterval = knownCars.length;
-    if (carsSeenThisInterval > 0) reward += _responsesGivenInterval / carsSeenThisInterval - 0.5 + carsSeenThisInterval * 0.1;
-    */
-
-    final sPrime = _buildState();
-
-    if (_lastState != null && _lastAction != null) {
-      try {
-        final int remainingTicks = SUBFRAMES - 1 - tick;
-        final bool done = remainingTicks <= 0;
-        double? gammaOverride;
-        if (!done && remainingTicks > 0) {
-          gammaOverride = pow(GAMMA_FRAME, remainingTicks / SUBFRAMES).toDouble();
-        }
-        agent.learn(_lastState!, _lastAction!, reward, sPrime, done: done, gammaOverride: gammaOverride);
-        if (tick == SUBFRAMES - 1) analyzer?.recordMDPProgress(id, 'RSU', reward, sPrime, agent.parameters());
-      } catch (e) {
-        print('MDPRSU learn failed: $e');
-      }
-    }
   }
 }

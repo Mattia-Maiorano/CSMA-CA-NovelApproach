@@ -7,7 +7,6 @@ import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'analyzer_writer_io.dart'
   if (dart.library.html) 'analyzer_writer_web.dart';
-import 'package:daemon/utils/slope_utils.dart' as slope_utils;
 
 /// Data structure to track MDP learning progress per node
 class MDPNodeProgress {
@@ -114,9 +113,9 @@ class Analyzer {
     }
 
     _mdpProgress[nodeId]!.recordProgress(reward, state, params);
-    // Apply passive epsilon decay for the agent if registered (apply each episode)
+    // Apply passive epsilon decay if enabled (separate flag)
     final agent = _mdpAgents[nodeId];
-    if (agent != null) {
+    if (ENABLE_EPSILON_DECAY && agent != null) {
       try {
         final oldEps = agent.getEpsilon();
         final double newEps = oldEps > EPSILON_BASELINE ? (oldEps * EPSILON_DECAY_FACTOR).clamp(EPSILON_BASELINE, EPSILON_MAX) : oldEps;
@@ -125,51 +124,47 @@ class Analyzer {
         // ignore if agent doesn't support get/set
       }
     }
-    // evaluate reward gradient and adjust epsilon if needed
-    try {
-      _evaluateRewardGradient(nodeId);
-    } catch (e) {
-      print('Gradient evaluation failed for node $nodeId: $e');
+
+    // Perform adaptive epsilon increases based on reward gradient only when
+    // enabled through ENABLE_EPSILON_ADAPT. This allows experiments where
+    // passive decay is disabled but gradient-triggered re-exploration is used,
+    // or vice-versa.
+    if (ENABLE_EPSILON_ADAPT) {
+      try {
+        _evaluateRewardGradient(nodeId);
+      } catch (e) {
+        print('Gradient evaluation failed for node $nodeId: $e');
+      }
     }
   }
 
   void _evaluateRewardGradient(int nodeId) {
     final prog = _mdpProgress[nodeId];
-    if (prog == null || prog.rewards.length < REWARD_GRAD_WINDOW) return;
-    final int w = REWARD_GRAD_WINDOW;
+    final int w = EPSILON_WINDOW;
+    // Need 2*w frames to compare two consecutive windows
+    if (prog == null || prog.rewards.length < w * 2) return;
     final int total = prog.rewards.length;
-    // Compute linear regression slope across the last w points.
-    // This reflects the trend in recent rewards and is used to measure
-    // whether performance is degrading (slope sufficiently negative).
-    final window = prog.rewards.sublist(total - w, total);
-    final double slope = slope_utils.computeSlope(window);
-    // Compute effective threshold considering sensitivity configuration
-    final double effectiveThreshold = REWARD_GRAD_THRESHOLD * REWARD_GRAD_SENSITIVITY;
-    // If slope is smaller than the configured threshold (e.g. more negative), trigger
-    final bool triggered = slope < effectiveThreshold;
+    // Compute average of last w frames and the w frames before that
+    final recentWindow = prog.rewards.sublist(total - w, total);
+    final prevWindow = prog.rewards.sublist(total - w * 2, total - w);
+    final double recentAvg = recentWindow.reduce((a, b) => a + b) / w;
+    final double prevAvg = prevWindow.reduce((a, b) => a + b) / w;
+    // Trigger if recent average is lower than previous average
+    final bool triggered = recentAvg < prevAvg;
     if (triggered) {
-      // decrease reward trend: increase exploration
       final agent = _mdpAgents[nodeId];
       if (agent == null) return;
-      // Enforce cooldown: only allow epsilon change if enough episodes have elapsed since last change
-      // `total` is already declared above as the length of rewards
+      // Enforce cooldown
       final int lastChange = _lastEpsilonChangeEpisode[nodeId] ?? -9999999;
-      if (total - lastChange < EPSILON_COOLDOWN_EPISODES) {
-        // cooldown in effect; no change
-        return;
-      }
-      print('Analyzer: node $nodeId reward slope $slope < threshold $REWARD_GRAD_THRESHOLD. Adjust epsilon.');
-      // Try to read current epsilon and set a new value. Use try/catch to support agents that might not implement the interface.
+      if (total - lastChange < EPSILON_COOLDOWN_EPISODES) return;
+      print('Analyzer: node $nodeId avg reward $recentAvg < prev $prevAvg. Adjust epsilon.');
       try {
         final oldEps = agent.getEpsilon();
         final newEps = (oldEps + EPSILON_INC).clamp(EPSILON_MIN, EPSILON_MAX);
         agent.setEpsilon(newEps);
-        // record last change episode index
         _lastEpsilonChangeEpisode[nodeId] = total;
-        // persist change event for export
         _epsilonChangeEvents[nodeId] ??= {};
         _epsilonChangeEvents[nodeId]![total] = {'old': oldEps, 'new': newEps};
-        // Toggle entity visual marker if registered
         final ent = _mdpEntities[nodeId];
         if (ent != null) {
           ent.epsilonChanged = true;
@@ -181,8 +176,6 @@ class Analyzer {
       }
     }
   }
-
-  // slope computations are moved to `slope_utils.dart` to avoid duplication
 
   void recordMDPAction(int nodeId, String action) {
     if (!_mdpEnabled) return;
@@ -208,13 +201,11 @@ class Analyzer {
   }
 
   void incrementRts() {
-    if (!_mdpEnabled) return;
     totalRts++;
     _currentFrameRts++;
   }
 
   void incrementAcks() {
-    if (!_mdpEnabled) return;
     totalAcks++;
     _currentFrameAcks++;
   }
@@ -326,12 +317,13 @@ class Analyzer {
           final recentList = progress.rewards.sublist(startIndex, total);
           final double recentAvg = recentList.reduce((a, b) => a + b) / recentList.length;
           buffer.writeln('Recent Average (last ${recentList.length} episodes): ${recentAvg.toStringAsFixed(2)}');
-          // include a slope measurement for the recent window
-          if (total >= REWARD_GRAD_WINDOW) {
-            final startIdx = total - REWARD_GRAD_WINDOW;
-            final window = progress.rewards.sublist(startIdx, total);
-            final double slope = slope_utils.computeSlope(window);
-            buffer.writeln('Reward slope (last $REWARD_GRAD_WINDOW): ${slope.toStringAsFixed(5)}');
+          // include window averages for epsilon adaptation
+          if (total >= EPSILON_WINDOW * 2) {
+            final recentW = progress.rewards.sublist(total - EPSILON_WINDOW, total);
+            final prevW = progress.rewards.sublist(total - EPSILON_WINDOW * 2, total - EPSILON_WINDOW);
+            final recentWAvg = recentW.reduce((a, b) => a + b) / EPSILON_WINDOW;
+            final prevWAvg = prevW.reduce((a, b) => a + b) / EPSILON_WINDOW;
+            buffer.writeln('Window avg (last $EPSILON_WINDOW): ${recentWAvg.toStringAsFixed(3)}, prev: ${prevWAvg.toStringAsFixed(3)}');
           }
         }
         // Print final parameters if available (e.g., epsilon for QAgent)
@@ -383,24 +375,6 @@ class Analyzer {
             row['${nodeKey}_epsilon_change'] = _epsilonChangeEvents[p.nodeId]![i];
           } else {
             row['${nodeKey}_epsilon_change'] = null;
-          }
-          // Attach a reward slope to the param object for the current step if possible
-          double? slopeForStep;
-          final int w = REWARD_GRAD_WINDOW;
-          if (i >= w - 1) {
-            final int start = i - (w - 1);
-            final int end = i;
-            final List<double> stepWindow = [];
-            for (int k = start; k <= end; k++) {
-              final val = k < p.rewards.length ? p.rewards[k] : null;
-              if (val == null) break;
-              stepWindow.add(val.toDouble());
-            }
-            if (stepWindow.length == w) slopeForStep = slope_utils.computeSlope(stepWindow);
-          }
-          if (slopeForStep != null) {
-            if (row['${nodeKey}_par'] == null) row['${nodeKey}_par'] = {'reward_slope': slopeForStep};
-            else if (row['${nodeKey}_par'] is Map<String, dynamic>) row['${nodeKey}_par']['reward_slope'] = slopeForStep;
           }
           row['${nodeKey}_state'] = i < p.states.length ? p.states[i] : null;
           row['${nodeKey}_act'] = i < p.actions.length ? p.actions[i] : null;

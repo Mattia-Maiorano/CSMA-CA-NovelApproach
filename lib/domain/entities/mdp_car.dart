@@ -1,129 +1,143 @@
 import 'dart:math';
 
 import 'package:daemon/domain/entities/classic_car.dart';
-import 'package:daemon/domain/entities/position.dart';
+import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/utils/config.dart';
 import 'package:daemon/utils/measurement.dart';
 import 'package:daemon/domain/ai/agent.dart';
 
+/// Decision-based MDP Car: queries agent only at decision points, learns after outcome.
 class MDPCar extends Car {
   final Agent agent;
-  Map<String, dynamic>? _lastState;
-  String? _lastAction;
 
-  MDPCar({required int id, required int model, required Position position, required List<List<int>> manhattanGrid, required int range, required int sensingRange, int timer = 0, super.analyzer, required this.agent})
-      : super(id: id, model: model, position: position, manhattanGrid: manhattanGrid, range: range, sensingRange: sensingRange, timer: timer) {
-    // Register this agent in Analyzer (when available) for live epsilon adaptations
+  // Decision tracking
+  Map<String, dynamic>? _decisionState;  // State when decision was made
+  String? _pendingAction;                 // Action waiting for outcome
+  bool _waitingOutcome = false;           // Whether we're waiting for an outcome
+
+  MDPCar({
+    required super.id,
+    required super.model,
+    required super.position,
+    required super.manhattanGrid,
+    required super.range,
+    required super.sensingRange,
+    super.timer = 0,
+    super.analyzer,
+    required this.agent,
+  }) {
     analyzer?.registerMdpAgent(id, agent);
-    // Register entity too so Analyzer can toggle a visual marker on epsilon changes
     analyzer?.registerMdpEntity(id, this);
   }
 
-  Map<String, dynamic> _buildState() {
-    final int tickBin = (tick * 4) ~/ SUBFRAMES; // 0..3
-    // state for MDP agents:
-    // - 'seenCars': number of unique cars seen during current subframe (episode)
-    // - 'prevKnownCars': snapshot of seen cars count at the previous subframe end
-    return {
-      'seenCars': seenCarIds.length,
-      'prevKnownCars': prevKnownCars,
-      'tickBin': tickBin,
-      'comm': communicationOngoing ? 1 : 0,
-    };
+  Map<String, dynamic> _state() => {
+    'tick': (tick * 4) ~/ SUBFRAMES,
+    'busy': nav > 0 ? 1 : 0,
+    'resolved': (free || stop) ? 1 : 0,
+  };
+
+  /// Check if we're at a decision point: idle, medium free, not already resolved
+  bool _canDecide() =>
+      state == NodeState.idle && nav == 0 && !(free || stop) && !_waitingOutcome;
+
+  /// Check if the pending action's outcome is resolved
+  bool _outcomeResolved() {
+    if (!_waitingOutcome || _pendingAction == null) return false;
+
+    if (_pendingAction == 'startComm') {
+      // Outcome: communication completed (back to idle) or collision happened
+      final commDone = state == NodeState.idle && stage == TalkingStage.idle;
+      final resolved = free || stop;
+      final collision = softRst || hardRst;
+      return commDone || resolved || collision;
+    } else if (_pendingAction == 'defer') {
+      // Outcome: backoff expired (backoffSlots back to -1 or 0) and still idle
+      return backoffSlots <= 0 && state == NodeState.idle;
+    }
+    return false;
   }
 
-  void _applyAction(String action) {
-    switch (action) {
-      case 'noop':
-        break;
-      case 'startQuery':
-        // trigger immediate broadcast
-        broadcastTimer = 0;
-        break;
-      case 'defer':
-        backoffSlots = Random().nextInt(3) + 1;
-        break;
-      default:
-        // unknown action; noop
-        break;
+  /// Non-linear congestion factor: penalties softened when many cars nearby
+  /// Returns value in (0, 1] - lower when more congested
+  double _congestionFactor() {
+    final n = seenCarIds.length;
+    // Quadratic scaling: 1/(1 + 0.5*n²)
+    // n=0: 1.0, n=1: 0.67, n=2: 0.33, n=3: 0.18, n=4: 0.11
+    return 1.0 / (1.0 + 0.5 * n * n);
+  }
+
+  /// Compute reward for the completed action
+  double _computeReward() {
+    double r = 0.0;
+    final cf = _congestionFactor();
+
+    if (_pendingAction == 'startComm') {
+      if (free || stop) r += 3.0;                 // Success: full reward
+      else if (softRst) r -= 1.0 * cf;            // Collision: scaled penalty
+      else if (hardRst) r -= 2.0 * cf;            // Hard reset: scaled penalty
+      else r -= 0.5 * cf;                         // Comm failed: scaled penalty
+    } else if (_pendingAction == 'defer') {
+      r -= 0.1;                                   // Deferral: flat cost
     }
+
+    return r;
   }
 
   @override
   void handleState() {
+    // Decision point: agent chooses action only when it can actually act
+    if (_canDecide()) {
+      _decisionState = _state();
+      _pendingAction = agent.chooseAction(_decisionState!);
+      _waitingOutcome = true;
+      analyzer?.recordMDPAction(id, _pendingAction!);
 
-    final state = _buildState();
-    final action = agent.chooseAction(state);
-
-    // print('$tick-$id-${state})\t$emoji\tSEL\t: action=$action state=$state');
-
-    analyzer?.recordMDPAction(id, action);
-
-    _applyAction(action);
+      // Apply the action
+      if (_pendingAction == 'startComm') {
+        broadcastTimer = 0;  // Trigger query
+      } else if (_pendingAction == 'defer') {
+        backoffSlots = Random().nextInt(3) + 1;
+      }
+    }
 
     super.handleState();
-
-    // Keep last state/action for learning update later
-    _lastState = state;
-    _lastAction = action;
   }
 
   @override
   Measurement specificStep() {
-    Measurement result = super.specificStep();
+    final result = super.specificStep();
 
-    // After step is done, provide reward feedback to agent
-    handleRewards();
+    // Check if outcome is resolved → learn immediately
+    if (_outcomeResolved()) {
+      final reward = _computeReward();
+      final nextState = _state();
+      final done = (free || stop) || tick == SUBFRAMES - 1;
 
+      agent.learn(_decisionState!, _pendingAction!, reward, nextState, done: done);
+      analyzer?.recordMDPProgress(id, 'Car', reward, nextState, agent.parameters());
+
+      // Reset decision tracking
+      _decisionState = null;
+      _pendingAction = null;
+      _waitingOutcome = false;
+    }
+
+    // End of frame cleanup
     if (tick == SUBFRAMES - 1) {
+      // If still waiting for outcome at frame end, learn with penalty
+      if (_waitingOutcome && _decisionState != null && _pendingAction != null) {
+        final penalty = (free || stop) ? 1.0 : -3.0;  // Unfinished action
+        agent.learn(_decisionState!, _pendingAction!, penalty, _state(), done: true);
+        analyzer?.recordMDPProgress(id, 'Car', penalty, _state(), agent.parameters());
+      }
+
       prevKnownCars = seenCarIds.length;
       seenCarIds.clear();
+      _decisionState = null;
+      _pendingAction = null;
+      _waitingOutcome = false;
     }
 
     return result;
-  }
-
-  void handleRewards() {
-
-    // reward design: +1 for answered (response received)
-    double reward = 0.0;
-
-    // reward for communicating or sleeping
-    if (communicationOngoing) reward += 0.5;
-    else if (nav > 0) reward += 0.5;
-
-    // penalize talking after having already been answered
-    if ((free || stop) && communicationOngoing) reward -= 1.0;
-
-    // last tick big reward
-    if (tick == SUBFRAMES - 1 && (free || stop)) reward += 10;
-    else if (tick == SUBFRAMES - 1) reward -= 10;
-
-    /*
-    // Functioning but based on full step logic
-    if (tick == SUBFRAMES - 1) {
-      if (free || stop) reward += 1.0;
-      else reward -= 1.0;
-    }
-    */
-
-    // Build next-state representation
-    final sPrime = _buildState();
-
-    // Report learning step to agent and analyzer
-    if (_lastState != null && _lastAction != null) {
-      try {
-        final int remainingTicks = SUBFRAMES - 1 - tick;
-        final bool done = remainingTicks <= 0;
-        double? gammaOverride;
-        if (!done && remainingTicks > 0) {
-          gammaOverride = pow(GAMMA_FRAME, remainingTicks / SUBFRAMES).toDouble();
-        }
-        agent.learn(_lastState!, _lastAction!, reward, sPrime, done: done, gammaOverride: gammaOverride);
-        if (tick == SUBFRAMES - 1) analyzer?.recordMDPProgress(id, 'Car', reward, sPrime, agent.parameters());
-      } catch (e) {
-        print('Agent learn failed for car $id: $e');
-      }
-    }
   }
 }

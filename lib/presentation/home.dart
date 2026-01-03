@@ -142,7 +142,7 @@ class _MyHomePageState extends State<MyHomePage> {
       if (grid[y][x] == 100 && numRSUs < _rsuNum) {
         RSU rsu;
         if (_useMDP) {
-        final agent = QAgent(_entRepo.items.length, ['noop', 'defer']);
+        final agent = QAgent(_entRepo.items.length, ['ready', 'defer'], epsilon: DEFAULT_EPSILON);
         rsu = MDPRSU(
           id: numRSUs++,
           position: Position(x: x, y: y, direction: Direction.up),
@@ -219,7 +219,7 @@ class _MyHomePageState extends State<MyHomePage> {
 
       Car car;
       if (_useMDP) {
-        final agent = QAgent(_entRepo.items.length, ['noop', 'startQuery', 'defer']);
+        final agent = QAgent(_entRepo.items.length, ['startComm', 'defer'], epsilon: DEFAULT_EPSILON);
         car = MDPCar(
           id: _entRepo.items.length,
           model: rndm.nextInt(5),

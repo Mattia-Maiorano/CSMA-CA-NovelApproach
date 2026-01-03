@@ -92,6 +92,13 @@ class Loop {
     try {
       int run = 0;
       while (_running) {
+        
+        if (run >= MAX_EPISODES) {
+          print("Reached maximum number of episodes ($MAX_EPISODES). Stopping loop.");
+          stop();
+          break;
+        }
+
         final frameStart = DateTime.now();
 
         try {
