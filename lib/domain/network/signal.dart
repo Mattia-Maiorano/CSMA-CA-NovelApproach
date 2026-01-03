@@ -1,19 +1,23 @@
+/// ============================================================================
+/// Signal - Wireless Frame Representation
+/// ============================================================================
+/// Represents a wireless signal/frame transmitted over the shared medium.
+///
+/// Signal Types (RTS/CTS/Query/Response/ACK handshake):
+/// - RTS: Request-To-Send from car
+/// - CTS: Clear-To-Send from RSU
+/// - Query: Data request from car
+/// - Response: RSU response with stop/free decision
+/// - ACK: Acknowledgment from car
+/// - Broken: Collision indicator (multiple signals overlapping)
+/// ============================================================================
+
 import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/utils/config.dart';
 
-enum SignalType {
-  broken,
-  rts,
-  cts,
-  query,
-  response,
-  ack,
-}
+enum SignalType { broken, rts, cts, query, response, ack }
 
-enum SignalData {
-  stop,
-  free,
-}
+enum SignalData { stop, free }
 
 class Signal {
   final int ownerId;
@@ -25,11 +29,21 @@ class Signal {
   final bool communicationOngoing;
   final int txRange; // Transmission range in tiles
   late int duration;
-  
-  SignalData ?data;
 
-  Signal({required this.ownerId, required this.destinationId, required this.x, required this.y, required this.type, this.communicationOngoing = false, this.data, this.car, this.txRange = 0}){
-    switch (type){
+  SignalData? data;
+
+  Signal({
+    required this.ownerId,
+    required this.destinationId,
+    required this.x,
+    required this.y,
+    required this.type,
+    this.communicationOngoing = false,
+    this.data,
+    this.car,
+    this.txRange = 0,
+  }) {
+    switch (type) {
       case SignalType.rts:
         duration = RTSDURATION;
         break;
@@ -55,7 +69,7 @@ class Signal {
   }
 
   int navTime() {
-    switch (type){
+    switch (type) {
       case SignalType.rts:
         return NAVTIMECTS;
       case SignalType.cts:
@@ -70,5 +84,4 @@ class Signal {
         return DIFS;
     }
   }
-
 }

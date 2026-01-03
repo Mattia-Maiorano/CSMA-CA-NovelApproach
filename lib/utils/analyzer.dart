@@ -1,12 +1,22 @@
+/// ============================================================================
+/// Analyzer - Simulation Metrics and MDP Progress Tracker
+/// ============================================================================
+/// Collects and exports simulation performance metrics:
+/// - Protocol statistics: idle time, collisions, resets, throughput
+/// - MDP learning progress: rewards, states, parameters per agent
+/// - Epsilon adaptation: automatic exploration rate adjustment
+///
+/// Exports results as ZIP containing JSON data and text log.
+/// ============================================================================
+
 import 'package:daemon/utils/config.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/utils/measurement.dart';
 import 'dart:convert';
 import 'dart:math' as math;
-import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'analyzer_writer_io.dart'
-  if (dart.library.html) 'analyzer_writer_web.dart';
+    if (dart.library.html) 'analyzer_writer_web.dart';
 
 /// Data structure to track MDP learning progress per node
 class MDPNodeProgress {
@@ -300,15 +310,14 @@ class Analyzer {
 
     // Compute feature matrices and correlations removed for simplicity.
     buffer.writeln('\n\n=== MDP LEARNING PROGRESS ===\n');
-      // Short readable per-node summary
-      for (final progress in _mdpProgress.values) {
-        buffer.writeln('--- ${progress.nodeType} ${progress.nodeId} ---');
-        buffer.writeln('Training Episodes: ${progress.rewards.length}');
-        if (progress.rewards.isNotEmpty) {
-          double avgReward =
-              progress.rewards.reduce((a, b) => a + b) /
-              progress.rewards.length;
-          buffer.writeln('Average Reward: ${avgReward.toStringAsFixed(2)}');
+    // Short readable per-node summary
+    for (final progress in _mdpProgress.values) {
+      buffer.writeln('--- ${progress.nodeType} ${progress.nodeId} ---');
+      buffer.writeln('Training Episodes: ${progress.rewards.length}');
+      if (progress.rewards.isNotEmpty) {
+        double avgReward =
+            progress.rewards.reduce((a, b) => a + b) / progress.rewards.length;
+        buffer.writeln('Average Reward: ${avgReward.toStringAsFixed(2)}');
 
           // Compute recent average over the last 10% of episodes to highlight progress
           final int total = progress.rewards.length;
@@ -356,14 +365,14 @@ class Analyzer {
       }
 
       final List<Map<String, dynamic>> rows = [];
-        for (int i = 0; i < maxLen; i++) {
-          final Map<String, dynamic> row = {'step': i};
+      for (int i = 0; i < maxLen; i++) {
+        final Map<String, dynamic> row = {'step': i};
         for (final p in nodeList) {
           final nodeKey = 'NODE${p.nodeId}';
           row['${nodeKey}_rew'] = i < p.rewards.length ? p.rewards[i] : null;
           row['${nodeKey}_par'] = i < p.parameters.length
-                ? p.parameters[i]
-                : null;
+              ? p.parameters[i]
+              : null;
           // export epsilon as flat top-level field for convenience
           if (i < p.parameters.length && p.parameters[i].containsKey('epsilon')) {
             row['${nodeKey}_epsilon'] = p.parameters[i]['epsilon'];
@@ -475,7 +484,6 @@ class Analyzer {
   /// of the provided reward list. If there are fewer than `window` rewards,
   /// the function will return `0.0`.
 
-
   /// Recommend a `REWARD_GRAD_THRESHOLD` value that would detect a linear
   /// drop from `start` to `end` rewards over `window` episodes, given a
   /// `sensitivity` and an optional `margin` multiplier (default 0.9) to make
@@ -484,7 +492,6 @@ class Analyzer {
   /// Formula:
   ///   slope ≈ (end - start) / (window - 1)
   ///   recommendedThreshold = (slope / sensitivity) * margin
-
 
   // NOTE: `buildCombinedJson` helper removed — Analyzer now writes JSON + TXT into a ZIP and stores its bytes for UI re-download.
   // (states_report and related functions removed)

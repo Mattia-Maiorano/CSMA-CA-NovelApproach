@@ -1,3 +1,15 @@
+/// ============================================================================
+/// Classic RSU Entity - Roadside Unit Implementation
+/// ============================================================================
+/// Represents a Roadside Unit in the V2X simulation using CSMA/CA protocol.
+///
+/// Behavior:
+/// - Listens for RTS requests from vehicles
+/// - Responds with CTS→Response→(waits for ACK) handshake
+/// - Tracks known cars and their positions to detect potential collisions
+/// - Sends "stop" or "free" response based on collision prediction
+/// ============================================================================
+
 import 'dart:math';
 
 import 'package:daemon/domain/entities/entity.dart';
@@ -7,20 +19,28 @@ import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/utils/config.dart';
 import 'package:daemon/utils/measurement.dart';
 
+/// Roadside Unit entity using classic CSMA/CA MAC protocol.
 class RSU extends Entity {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Knowledge State
+  // ─────────────────────────────────────────────────────────────────────────
+  Car? communicationCar; // Car currently in handshake
+  Set<(Car, int)> knownCars = {}; // Known cars with last-seen timestamp
+  final Set<int> seenCarIds = {}; // Car IDs seen in current subframe
 
-  Car? communicationCar;
-  Set<(Car, int)> knownCars = {};
-  final Set<int> seenCarIds = {};
-
-
-  RSU({required Position position, required int id, required int range, required int sensingRange, int timer = 0, super.analyzer}) : super(id, position, range, sensingRange, timer) {
+  RSU({
+    required Position position,
+    required int id,
+    required int range,
+    required int sensingRange,
+    int timer = 0,
+    super.analyzer,
+  }) : super(id, position, range, sensingRange, timer) {
     emoji = "🚦";
   }
 
   @override
   Measurement specificStep() {
-
     // ---- CLEANUP OLD KNOWLEDGE ----
     if (tick == SUBFRAMES - 1) {
       for (final (car, t) in knownCars.toList()) {
@@ -32,17 +52,22 @@ class RSU extends Entity {
       seenCarIds.clear();
     }
 
-    return Measurement(state: state, stage: stage, free: false, answered: requestedExit, softReset: softRst, hardReset: hardRst);
+    return Measurement(
+      state: state,
+      stage: stage,
+      free: false,
+      answered: requestedExit,
+      softReset: softRst,
+      hardReset: hardRst,
+    );
   }
-  
+
   @override
   void handleState() {
-
     //    COLLISION HANDLING
     if (state == NodeState.collision && lastReachedStage == stage) {
       restoreState();
     }
-    
     //    SLEEP/WAKE CONDITIONS
     else if (queuedSleep) {
       timeout = 0;
@@ -53,7 +78,6 @@ class RSU extends Entity {
       nextState(NodeState.idle);
       queuedWake = false;
     }
-
     //    MAIN LOOP OF STATE MACHINE
     else if (state == NodeState.querying && confirmedSend) {
       timeout = 0;
@@ -64,7 +88,6 @@ class RSU extends Entity {
       nextState(NodeState.querying);
       queuedReceive = false;
     }
-
     //    EXIT CONDITIONS
     else if (requestedExit) {
       timeout = 0;
@@ -72,7 +95,6 @@ class RSU extends Entity {
       requestedExit = false;
       communicationOngoing = false;
     }
-
   }
 
   @override
@@ -81,7 +103,6 @@ class RSU extends Entity {
       nav--;
 
       if (nav == 0) print('$tick-$id-$state)\t$emoji\t⏰​\t: nav expired');
-
     } else if (requestedSend) {
       ifsTimer = 0;
 
@@ -93,7 +114,7 @@ class RSU extends Entity {
         backoffSlots = -1;
         backoffExpired = true;
       }
-    } else if (state == NodeState.querying){
+    } else if (state == NodeState.querying) {
       ifsTimer++;
     }
 
@@ -113,9 +134,7 @@ class RSU extends Entity {
 
   @override
   void handleSignal(Signal? signalToRead) {
-
     if (signalToRead != null) {
-
       if (signalToRead.car != null) {
         communicationCar = signalToRead.car;
         updateKnowledge(signalToRead.car!);
@@ -124,11 +143,9 @@ class RSU extends Entity {
       }
 
       if (state != NodeState.querying && validateSignal(signalToRead)) {
-
         requestedQueueReceive = true;
         pal = signalToRead.ownerId;
         ifsTimer = 0;
-        
       } else if (signalToRead.type == SignalType.broken) {
       } else if (signalToRead.communicationOngoing && lastSeenSignal != signalToRead && signalToRead.ownerId != id) {
         lastSeenSignal = signalToRead;
@@ -136,9 +153,7 @@ class RSU extends Entity {
         reset(resetNav: false);
         print('$tick-$id-$state)\t$emoji\t💤​\t: new nav -> $nav');
       }
-
     } else {
-
       if (requestedQueueReceive) queuedReceive = true;
       requestedQueueReceive = false;
     }
@@ -161,7 +176,6 @@ class RSU extends Entity {
 
   @override
   Signal? handleResponse() {
-
     if (requestedSend && backoffExpired) {
       if (stage == TalkingStage.cts) {
         stage = TalkingStage.query;
@@ -201,10 +215,9 @@ class RSU extends Entity {
 
     return null;
   }
-  
+
   @override
   void handleStage() {
-
     if (state == NodeState.querying || state == NodeState.collision) {
       if (stage == TalkingStage.cts && ifsTimer == SIFS) {
         requestedSend = true;
@@ -226,7 +239,6 @@ class RSU extends Entity {
         }
       }
     }
-
   }
 
   @override
@@ -243,7 +255,7 @@ class RSU extends Entity {
       ifsTimer = 0;
     }
   }
-  
+
   void updateKnowledge(Car newcar) {
     if (knownCars.any((entry) => entry.$1.id == newcar.id)) {
       knownCars = knownCars.map((entry) => entry.$1.id == newcar.id ? (entry.$1, tick + frame * SUBFRAMES) : entry).toSet();

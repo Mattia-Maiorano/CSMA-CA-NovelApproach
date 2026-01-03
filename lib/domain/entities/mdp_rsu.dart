@@ -1,3 +1,20 @@
+/// ============================================================================
+/// MDP RSU Entity - Reinforcement Learning Roadside Unit
+/// ============================================================================
+/// Extends the classic RSU with Q-Learning based decision making.
+///
+/// Decision Points:
+/// - When idle and medium is free: choose 'ready' or 'defer'
+/// - Agent learns from outcomes: successful responses, collisions, timeouts
+///
+/// Reward Structure:
+/// - Successful response: +2.0
+/// - Soft reset (collision): -0.5 * congestion_factor
+/// - Hard reset: -1.0 * congestion_factor
+/// - Ready but no car: -0.2 * congestion_factor
+/// - Deferral: -0.1 (small cost for waiting)
+/// ============================================================================
+
 import 'dart:math';
 
 import 'package:daemon/domain/entities/classic_rsu.dart';
@@ -12,13 +29,13 @@ class MDPRSU extends RSU {
   final Agent agent;
 
   // Decision tracking
-  Map<String, dynamic>? _decisionState;  // State when decision was made
-  String? _pendingAction;                 // Action waiting for outcome
-  bool _waitingOutcome = false;           // Whether we're waiting for an outcome
+  Map<String, dynamic>? _decisionState; // State when decision was made
+  String? _pendingAction; // Action waiting for outcome
+  bool _waitingOutcome = false; // Whether we're waiting for an outcome
 
   // Response tracking
   final Set<int> _answered = {};
-  int _responsesAtDecision = 0;          // Responses when decision was made
+  int _responsesAtDecision = 0; // Responses when decision was made
 
   MDPRSU({
     required super.id,
@@ -40,8 +57,7 @@ class MDPRSU extends RSU {
   };
 
   /// Check if we're at a decision point: idle and medium free
-  bool _canDecide() =>
-      state == NodeState.idle && nav == 0 && !_waitingOutcome;
+  bool _canDecide() => state == NodeState.idle && nav == 0 && !_waitingOutcome;
 
   /// Check if the pending action's outcome is resolved
   bool _outcomeResolved() {
@@ -138,8 +154,20 @@ class MDPRSU extends RSU {
       final nextState = _state();
       final done = tick == SUBFRAMES - 1;
 
-      agent.learn(_decisionState!, _pendingAction!, reward, nextState, done: done);
-      analyzer?.recordMDPProgress(id, 'RSU', reward, nextState, agent.parameters());
+      agent.learn(
+        _decisionState!,
+        _pendingAction!,
+        reward,
+        nextState,
+        done: done,
+      );
+      analyzer?.recordMDPProgress(
+        id,
+        'RSU',
+        reward,
+        nextState,
+        agent.parameters(),
+      );
 
       // Reset decision tracking
       _decisionState = null;
@@ -153,8 +181,20 @@ class MDPRSU extends RSU {
       if (_waitingOutcome && _decisionState != null && _pendingAction != null) {
         final newResponses = _answered.length - _responsesAtDecision;
         final penalty = newResponses > 0 ? 1.0 : -1.0;
-        agent.learn(_decisionState!, _pendingAction!, penalty, _state(), done: true);
-        analyzer?.recordMDPProgress(id, 'RSU', penalty, _state(), agent.parameters());
+        agent.learn(
+          _decisionState!,
+          _pendingAction!,
+          penalty,
+          _state(),
+          done: true,
+        );
+        analyzer?.recordMDPProgress(
+          id,
+          'RSU',
+          penalty,
+          _state(),
+          agent.parameters(),
+        );
       }
 
       _answered.clear();

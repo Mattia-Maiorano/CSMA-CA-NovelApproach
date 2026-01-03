@@ -1,33 +1,56 @@
+/// ============================================================================
+/// Base Entity Class for V2X Simulation
+/// ============================================================================
+/// Abstract base class for all network entities (Cars and RSUs).
+/// Implements the CSMA/CA-like MAC protocol state machine with:
+/// - NodeState: idle, sleeping, waiting, querying, collision
+/// - TalkingStage: idle, rts, cts, query, response, ack (handshake phases)
+///
+/// Subclasses must implement:
+/// - specificStep(): Entity-specific logic per tick
+/// - handleState/handleStage/handleSignal/handleResponse/handleTimers
+/// - softReset(): Collision recovery behavior
+/// ============================================================================
+
 import 'package:daemon/domain/entities/position.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/utils/analyzer.dart';
 import 'package:daemon/utils/config.dart';
 import 'package:daemon/utils/measurement.dart';
 
+/// States of the MAC protocol state machine.
 enum NodeState {
-  idle,
-  sleeping,
-  waiting,
-  querying,
-  collision,
+  idle, // Not communicating
+  sleeping, // Temporarily inactive
+  waiting, // Waiting for response after transmission
+  querying, // Actively transmitting
+  collision, // Detected collision, handling backoff
 }
 
+/// Stages of the RTS/CTS/Query/Response/ACK handshake.
 enum TalkingStage {
-  idle,
-  rts,
-  cts,
-  query,
-  response,
-  ack,
+  idle, // No active handshake
+  rts, // Request-To-Send sent/expected
+  cts, // Clear-To-Send sent/expected
+  query, // Query data sent/expected
+  response, // Response data sent/expected
+  ack, // Acknowledgment sent/expected
 }
 
+/// Base class for all simulation entities (Cars, RSUs).
 abstract class Entity<T> {
+  // ─────────────────────────────────────────────────────────────────────────
+  // Identity & Configuration
+  // ─────────────────────────────────────────────────────────────────────────
   final int id;
-  final int range;
-  final int sensingRange;
+  final int range; // Transmission range in tiles
+  final int sensingRange; // Reception/sensing range in tiles
   Position position;
   final Analyzer? analyzer;
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Protocol State
+  // ─────────────────────────────────────────────────────────────────────────
   NodeState state = NodeState.idle;
   TalkingStage stage = TalkingStage.idle;
 
@@ -67,7 +90,14 @@ abstract class Entity<T> {
   // Last episode index when epsilon changed for this node; useful for debugging
   int lastEpsilonChangeEpisode = -1;
 
-  Entity(this.id, this.position, this.range, this.sensingRange, this.ifsTimer, {this.analyzer});
+  Entity(
+    this.id,
+    this.position,
+    this.range,
+    this.sensingRange,
+    this.ifsTimer, {
+    this.analyzer,
+  });
 
   (Signal?, Measurement) step(int tick, int frame, Signal? signalToRead) {
     this.tick = tick;
@@ -82,14 +112,14 @@ abstract class Entity<T> {
     handleState();
     handleTimers();
     handleSignal(signalToRead);
-    
+
     Signal? signal;
     if (state == NodeState.querying || state == NodeState.collision) {
       signal = handleResponse();
     }
 
     handleStage();
-    
+
     return (signal, specificStep());
   }
 

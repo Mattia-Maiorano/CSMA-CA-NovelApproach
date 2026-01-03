@@ -1,3 +1,15 @@
+/// ============================================================================
+/// Classic Car Entity - CSMA/CA Vehicle Implementation
+/// ============================================================================
+/// Represents a vehicle in the V2X simulation using standard CSMA/CA protocol.
+///
+/// Behavior:
+/// - Periodically broadcasts RTS to request RSU assistance
+/// - Follows RTS→CTS→Query→Response→ACK handshake
+/// - Moves on the road grid according to direction tiles
+/// - Receives "stop" or "free" responses from RSUs for collision avoidance
+/// ============================================================================
+
 import 'dart:math';
 
 import 'package:daemon/domain/entities/position.dart';
@@ -6,22 +18,40 @@ import 'package:daemon/domain/network/signal.dart';
 import 'package:daemon/utils/config.dart';
 import 'package:daemon/utils/measurement.dart';
 
+/// Vehicle entity using classic CSMA/CA MAC protocol.
 class Car extends Entity {
-  final List<List<int>> manhattanGrid;
-  final int model;
+  // ─────────────────────────────────────────────────────────────────────────
+  // Configuration
+  // ─────────────────────────────────────────────────────────────────────────
+  final List<List<int>> manhattanGrid; // Road grid for movement
+  final int model; // Visual model variant
 
-  final Set<int> seenCarIds = {};
+  // ─────────────────────────────────────────────────────────────────────────
+  // Knowledge & Timers
+  // ─────────────────────────────────────────────────────────────────────────
+  final Set<int> seenCarIds = {}; // IDs of cars seen in signals
   int prevKnownCars = 0;
+  int broadcastTimer = BROADCAST; // Countdown to next RTS broadcast
 
-  int broadcastTimer = BROADCAST;
+  // ─────────────────────────────────────────────────────────────────────────
+  // Movement State
+  // ─────────────────────────────────────────────────────────────────────────
+  bool stop = false; // RSU told car to stop (collision risk)
+  bool free = false; // RSU told car it's free to move
 
-  bool stop = false;
-  bool free = false;
-
-  Car({required int id, required this.model, required Position position, required this.manhattanGrid, required int range, required int sensingRange, int timer = 0, super.analyzer}) : super(id, position, range, sensingRange, timer) {
+  Car({
+    required int id,
+    required this.model,
+    required Position position,
+    required this.manhattanGrid,
+    required int range,
+    required int sensingRange,
+    int timer = 0,
+    super.analyzer,
+  }) : super(id, position, range, sensingRange, timer) {
     emoji = "🚗";
   }
-  
+
   @override
   void reset({bool resetNav = true}) {
     super.reset(resetNav: resetNav);
@@ -29,8 +59,7 @@ class Car extends Entity {
   }
 
   @override
-Measurement specificStep() {
-
+  Measurement specificStep() {
     // ---- MOVEMENT LOGIC ----
     if (tick != 0) {
       if (!stop && tick == SUBFRAMES - 1) {
@@ -41,23 +70,27 @@ Measurement specificStep() {
       free = false;
     }
 
-    return Measurement(state: state, stage: stage, free: free, answered: requestedExit, softReset: softRst, hardReset: hardRst);
+    return Measurement(
+      state: state,
+      stage: stage,
+      free: free,
+      answered: requestedExit,
+      softReset: softRst,
+      hardReset: hardRst,
+    );
   }
 
   @override
   void handleState() {
-
     if (broadcastTimer == 0 && state == NodeState.idle) {
       timeout = 0;
       broadcastTimer = BROADCAST;
       nextState(NodeState.querying);
     }
-
     //    COLLISION HANDLING
     else if (state == NodeState.collision && lastReachedStage == stage) {
       restoreState();
     }
-    
     //    SLEEP/WAKE CONDITIONS
     else if (queuedSleep) {
       timeout = 0;
@@ -68,7 +101,6 @@ Measurement specificStep() {
       nextState(NodeState.idle);
       queuedWake = false;
     }
-
     //    MAIN LOOP OF STATE MACHINE
     else if (state == NodeState.querying && confirmedSend) {
       timeout = 0;
@@ -79,7 +111,6 @@ Measurement specificStep() {
       switchState();
       queuedReceive = false;
     }
-
     //    EXIT CONDITIONS
     else if (requestedExit) {
       timeout = 0;
@@ -87,7 +118,6 @@ Measurement specificStep() {
       requestedExit = false;
       communicationOngoing = false;
     }
-
   }
 
   @override
@@ -97,8 +127,6 @@ Measurement specificStep() {
 
       if (nav == 0) print('$tick-$id-$state)\t$emoji\t⏰​\t: nav expired');
       if (nav == 0) broadcastTimer = BROADCAST;
-
-      
     } else if (state == NodeState.idle) {
       broadcastTimer--;
     } else if (requestedSend) {
@@ -133,15 +161,13 @@ Measurement specificStep() {
   @override
   void handleSignal(Signal? signalToRead) {
     if (signalToRead != null) {
-
       if (signalToRead.car != null) seenCarIds.add(signalToRead.car!.id);
 
       if (state != NodeState.querying && validateSignal(signalToRead)) {
-
         requestedQueueReceive = true;
         pal = signalToRead.ownerId;
         ifsTimer = 0;
-        
+
         if (signalToRead.type == SignalType.response) {
           if (signalToRead.data == SignalData.stop) {
             stop = true;
@@ -159,7 +185,6 @@ Measurement specificStep() {
         queuedReceive = true;
         requestedQueueReceive = false;
       }
-
     } else {
       if (requestedQueueReceive) queuedReceive = true;
       requestedQueueReceive = false;
@@ -181,9 +206,7 @@ Measurement specificStep() {
 
   @override
   Signal? handleResponse() {
-
     if (requestedSend && backoffExpired) {
-
       if (stage == TalkingStage.idle) {
         stage = TalkingStage.rts;
         requestedSend = false;
@@ -200,7 +223,6 @@ Measurement specificStep() {
           txRange: txRange,
         );
         return signal;
-
       } else if (stage == TalkingStage.cts) {
         stage = TalkingStage.query;
         requestedSend = false;
@@ -219,7 +241,6 @@ Measurement specificStep() {
           txRange: txRange,
         );
         return signal;
-
       } else if (stage == TalkingStage.response) {
         stage = TalkingStage.ack;
         requestedSend = false;
@@ -245,7 +266,6 @@ Measurement specificStep() {
 
   @override
   void handleStage() {
-    
     if (state == NodeState.querying) {
       if (stage == TalkingStage.idle && ifsTimer == DIFS) {
         requestedSend = true;
@@ -268,7 +288,6 @@ Measurement specificStep() {
         requestedExit = true;
       }
     }
-
   }
 
   @override
@@ -299,7 +318,11 @@ Measurement specificStep() {
       newPosition = moveForward();
     }
 
-    position = Position(x: newPosition.x, y: newPosition.y, direction: position.direction);
+    position = Position(
+      x: newPosition.x,
+      y: newPosition.y,
+      direction: position.direction,
+    );
   }
 
   Position moveForward() {

@@ -1,3 +1,17 @@
+/// ============================================================================
+/// Q-Learning Agent Implementation
+/// ============================================================================
+/// Tabular Q-Learning agent with epsilon-greedy exploration.
+///
+/// Key Parameters:
+/// - alpha: Learning rate (default 0.1)
+/// - gamma: Discount factor (default 0.99)
+/// - epsilon: Exploration rate (adjustable, starts at 0.9)
+///
+/// The Q-table maps state strings to action-value dictionaries.
+/// States are serialized as "key1=value1|key2=value2|..." strings.
+/// ============================================================================
+
 import 'dart:math';
 import 'agent.dart';
 
@@ -8,8 +22,13 @@ class QAgent extends Agent {
   double epsilon;
   final Random _rnd = Random();
 
-  QAgent(int id, List<String> actions, {this.alpha = 0.1, this.gamma = 0.99, this.epsilon = 0.9})
-      : super(id, actions);
+  QAgent(
+    int id,
+    List<String> actions, {
+    this.alpha = 0.1,
+    this.gamma = 0.99,
+    this.epsilon = 0.9,
+  }) : super(id, actions);
 
   String _keyFromState(Map<String, dynamic> s) {
     final sorted = s.keys.toList()..sort();
@@ -45,7 +64,14 @@ class QAgent extends Agent {
   }
 
   @override
-  void learn(Map<String, dynamic> state, String action, double reward, Map<String, dynamic> nextState, {bool done = false, double? gammaOverride}) {
+  void learn(
+    Map<String, dynamic> state,
+    String action,
+    double reward,
+    Map<String, dynamic> nextState, {
+    bool done = false,
+    double? gammaOverride,
+  }) {
     final sKey = _keyFromState(state);
     final nsKey = _keyFromState(nextState);
     if (!_qTable.containsKey(sKey)) _qTable[sKey] = _initActionMap();

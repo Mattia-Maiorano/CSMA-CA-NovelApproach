@@ -1,4 +1,10 @@
- 
+/// ============================================================================
+/// Agent Interface for Reinforcement Learning
+/// ============================================================================
+/// Abstract base class defining the interface for RL agents in the simulation.
+/// Agents implement action selection and learning from experience.
+/// ============================================================================
+
 /// Minimal Agent interface for node-level RL in the simulation.
 abstract class Agent {
   final int id;
@@ -13,7 +19,14 @@ abstract class Agent {
   String chooseAction(Map<String, dynamic> state);
 
   /// Learn/update policy using a single transition.
-  void learn(Map<String, dynamic> state, String action, double reward, Map<String, dynamic> nextState, {bool done = false, double? gammaOverride});
+  void learn(
+    Map<String, dynamic> state,
+    String action,
+    double reward,
+    Map<String, dynamic> nextState, {
+    bool done = false,
+    double? gammaOverride,
+  });
 
   /// Return readable training parameters (hyperparameters) for logging.
   Map<String, double> parameters();

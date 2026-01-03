@@ -1,3 +1,13 @@
+/// ============================================================================
+/// Home Page - Main UI for V2X Simulation
+/// ============================================================================
+/// Provides:
+/// - Configuration panel to set simulation parameters (cars, RSUs, FPS, MDP mode)
+/// - Visual grid display of the road network and entities
+/// - Controls to start/stop simulation
+/// - Access to the Resumer page for analyzing MDP learning progress
+/// ============================================================================
+
 import 'dart:async';
 import 'dart:math';
 
@@ -34,10 +44,16 @@ class MyHomePage extends StatefulWidget {
 }
 
 class _MyHomePageState extends State<MyHomePage> {
+  // ─────────────────────────────────────────────────────────────────────────
+  // State Variables
+  // ─────────────────────────────────────────────────────────────────────────
   bool _started = false;
   bool _gridLoaded = false;
   bool _showConfig = true;
 
+  // ─────────────────────────────────────────────────────────────────────────
+  // Simulation Components
+  // ─────────────────────────────────────────────────────────────────────────
   late final Medium medium = Medium();
   late final BaseRepo<Car> _carRepo;
   late final BaseRepo<RSU> _rsuRepo;
@@ -45,14 +61,18 @@ class _MyHomePageState extends State<MyHomePage> {
   late final Analyzer _analyzer = Analyzer();
   late Loop _loop;
 
-  // Configuration parameters
+  // ─────────────────────────────────────────────────────────────────────────
+  // Configuration Parameters (adjustable via UI)
+  // ─────────────────────────────────────────────────────────────────────────
   int _carNum = CARNUM;
   int _rsuNum = RSUNUM;
   int _fps = FPS;
-  // Toggle whether to use MDP agents (UI-level override)
+  // Toggle for MDP agents vs classic CSMA/CA
   bool _useMDP = USE_MDP;
 
-  // GAME PARAMETERS
+  // ─────────────────────────────────────────────────────────────────────────
+  // Grid/Display Parameters
+  // ─────────────────────────────────────────────────────────────────────────
   final double tileSize = 20;
   final int range = RANGE;
   final int carSensingRange = 3;
@@ -138,36 +158,39 @@ class _MyHomePageState extends State<MyHomePage> {
     final List<(int, int)> availableTiles = [];
     for (int y = 0; y < gridHeight; y++) {
       for (int x = 0; x < gridWidth; x++) {
-      // RSU placement
-      if (grid[y][x] == 100 && numRSUs < _rsuNum) {
-        RSU rsu;
-        if (_useMDP) {
-        final agent = QAgent(_entRepo.items.length, ['ready', 'defer'], epsilon: DEFAULT_EPSILON);
-        rsu = MDPRSU(
-          id: numRSUs++,
-          position: Position(x: x, y: y, direction: Direction.up),
-          range: range,
-          sensingRange: rsuSensingRange,
-          analyzer: _analyzer,
-          agent: agent,
-        );
-        } else {
-        rsu = RSU(
-          id: numRSUs++,
-          position: Position(x: x, y: y, direction: Direction.up),
-          range: range,
-          sensingRange: rsuSensingRange,
-          analyzer: _analyzer,
-        );
+        // RSU placement
+        if (grid[y][x] == 100 && numRSUs < _rsuNum) {
+          RSU rsu;
+          if (_useMDP) {
+            final agent = QAgent(_entRepo.items.length, [
+              'ready',
+              'defer',
+            ], epsilon: DEFAULT_EPSILON);
+            rsu = MDPRSU(
+              id: numRSUs++,
+              position: Position(x: x, y: y, direction: Direction.up),
+              range: range,
+              sensingRange: rsuSensingRange,
+              analyzer: _analyzer,
+              agent: agent,
+            );
+          } else {
+            rsu = RSU(
+              id: numRSUs++,
+              position: Position(x: x, y: y, direction: Direction.up),
+              range: range,
+              sensingRange: rsuSensingRange,
+              analyzer: _analyzer,
+            );
+          }
+
+          _entRepo.addItem(rsu);
         }
 
-        _entRepo.addItem(rsu);
-      }
-
-      // Collect road tiles (exclude RSU and empty)
-      if (grid[y][x] != 0 && grid[y][x] != 100) {
-        availableTiles.add((x, y));
-      }
+        // Collect road tiles (exclude RSU and empty)
+        if (grid[y][x] != 0 && grid[y][x] != 100) {
+          availableTiles.add((x, y));
+        }
       }
     }
 
@@ -179,36 +202,37 @@ class _MyHomePageState extends State<MyHomePage> {
 
       // helper to compute Euclidean distance on records
       double _dist((int, int) a, (int, int) b) {
-      final (ax, ay) = a;
-      final (bx, by) = b;
-      return sqrt((ax - bx) * (ax - bx) + (ay - by) * (ay - by));
+        final (ax, ay) = a;
+        final (bx, by) = b;
+        return sqrt((ax - bx) * (ax - bx) + (ay - by) * (ay - by));
       }
 
       // pick first at random
-      final (int, int) first = availableTiles[rndm.nextInt(availableTiles.length)];
+      final (int, int) first =
+          availableTiles[rndm.nextInt(availableTiles.length)];
       carPositions.add(first);
 
       // greedily pick the farthest point from the set for each new car
       while (carPositions.length < carsToPlace) {
-      double bestMinDist = -1;
-      (int, int) bestCandidate = availableTiles.first;
+        double bestMinDist = -1;
+        (int, int) bestCandidate = availableTiles.first;
 
-      for (final candidate in availableTiles) {
-        if (carPositions.contains(candidate)) continue;
+        for (final candidate in availableTiles) {
+          if (carPositions.contains(candidate)) continue;
 
-        double minD = double.infinity;
-        for (final chosen in carPositions) {
-        final d = _dist(candidate, chosen);
-        if (d < minD) minD = d;
+          double minD = double.infinity;
+          for (final chosen in carPositions) {
+            final d = _dist(candidate, chosen);
+            if (d < minD) minD = d;
+          }
+
+          if (minD > bestMinDist) {
+            bestMinDist = minD;
+            bestCandidate = candidate;
+          }
         }
 
-        if (minD > bestMinDist) {
-        bestMinDist = minD;
-        bestCandidate = candidate;
-        }
-      }
-
-      carPositions.add(bestCandidate);
+        carPositions.add(bestCandidate);
       }
     }
 
@@ -219,7 +243,10 @@ class _MyHomePageState extends State<MyHomePage> {
 
       Car car;
       if (_useMDP) {
-        final agent = QAgent(_entRepo.items.length, ['startComm', 'defer'], epsilon: DEFAULT_EPSILON);
+        final agent = QAgent(_entRepo.items.length, [
+          'startComm',
+          'defer',
+        ], epsilon: DEFAULT_EPSILON);
         car = MDPCar(
           id: _entRepo.items.length,
           model: rndm.nextInt(5),
@@ -233,14 +260,14 @@ class _MyHomePageState extends State<MyHomePage> {
         );
       } else {
         car = Car(
-        id: _entRepo.items.length,
-        model: rndm.nextInt(5),
-        position: Position(x: carX, y: carY, direction: direction),
-        manhattanGrid: grid,
-        range: range,
-        sensingRange: carSensingRange,
-        timer: rndm.nextInt(10),
-        analyzer: _analyzer,
+          id: _entRepo.items.length,
+          model: rndm.nextInt(5),
+          position: Position(x: carX, y: carY, direction: direction),
+          manhattanGrid: grid,
+          range: range,
+          sensingRange: carSensingRange,
+          timer: rndm.nextInt(10),
+          analyzer: _analyzer,
         );
       }
 
@@ -373,7 +400,7 @@ class _MyHomePageState extends State<MyHomePage> {
             IconButton(
               tooltip: 'Export analyzer now',
               icon: const Icon(Icons.save),
-                onPressed: () async {
+              onPressed: () async {
                 final messenger = ScaffoldMessenger.of(context);
                 try {
                   final savedPath = await _analyzer.closeAndWrite(_useMDP);
@@ -510,7 +537,10 @@ class _MyHomePageState extends State<MyHomePage> {
                   // Use MDP toggle
                   Row(
                     children: [
-                      const Text('Use MDP Agents', style: TextStyle(fontSize: 16)),
+                      const Text(
+                        'Use MDP Agents',
+                        style: TextStyle(fontSize: 16),
+                      ),
                       const SizedBox(width: 8),
                       Switch(
                         value: _useMDP,
@@ -518,13 +548,13 @@ class _MyHomePageState extends State<MyHomePage> {
                       ),
                     ],
                   ),
-                  
+
                   // Car Number Slider
                   Text(
                     'Number of Cars: $_carNum',
                     style: const TextStyle(fontSize: 16),
                   ),
-        
+
                   const SizedBox(height: 20),
                   Slider(
                     value: _carNum.toDouble(),

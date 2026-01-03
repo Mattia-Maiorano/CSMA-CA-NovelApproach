@@ -1,3 +1,10 @@
+/// ============================================================================
+/// Repository View - Filtered Projection
+/// ============================================================================
+/// Provides a filtered view over a master repository without duplicating data.
+/// Used to create separate Car and RSU repositories from a single Entity store.
+/// ============================================================================
+
 import 'dart:async';
 
 import '../domain/repositories/base_repo.dart';
@@ -17,7 +24,9 @@ class RepoView<T> implements BaseRepo<T> {
 
   @override
   Stream<List<T>> watchItems() {
-    return _master.watchItems().map((list) => list.where(_filter).cast<T>().toList());
+    return _master.watchItems().map(
+      (list) => list.where(_filter).cast<T>().toList(),
+    );
   }
 
   @override

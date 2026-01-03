@@ -1,11 +1,25 @@
+/// ============================================================================
+/// Scene Painters for V2X Simulation Visualization
+/// ============================================================================
+/// Contains two CustomPainter classes:
+/// - ScenePainter: Renders dynamic entities (cars, RSUs) and signals
+/// - StaticScenePainter: Renders the static road grid background
+///
+/// Color coding:
+/// - Blue: Normal car | Yellow: Stopped car | Green: Free car | Black: Collision
+/// - Red: RSU with semi-transparent range circle
+/// - Purple ring: Entity with recent epsilon change (MDP mode)
+/// - Signal circles: Green=RTS, Orange=ACK, Purple=Other
+/// ============================================================================
+
 import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/domain/entities/entity.dart';
 import 'package:daemon/domain/entities/classic_rsu.dart';
-// MDP entities no longer required for painting directly; rely on base classes
 import 'package:daemon/domain/network/medium.dart';
 import 'package:daemon/domain/network/signal.dart';
 import 'package:flutter/material.dart';
 
+/// Paints dynamic entities (cars, RSUs) and active signals on the canvas.
 class ScenePainter extends CustomPainter {
   final List<Entity> entities;
   final Medium medium;
@@ -15,6 +29,7 @@ class ScenePainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
+    // Define paint styles for different entity states
     final paintCar = Paint()..color = Colors.blue;
     final paintStoppedCar = Paint()..color = Colors.yellow;
     final paintFreeCar = Paint()..color = Colors.green;
@@ -28,21 +43,39 @@ class ScenePainter extends CustomPainter {
     for (final ent in entities) {
       if (ent is RSU) {
         canvas.drawRect(
-            Rect.fromLTWH(ent.position.x * tileSize, ent.position.y * tileSize, tileSize, tileSize),
-            paintRSU);
+          Rect.fromLTWH(
+            ent.position.x * tileSize,
+            ent.position.y * tileSize,
+            tileSize,
+            tileSize,
+          ),
+          paintRSU,
+        );
         // Base range (static)
-        canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), ent.range * tileSize, paintRSUrange);
+        canvas.drawCircle(
+          Offset(
+            ent.position.x * tileSize + tileSize / 2,
+            ent.position.y * tileSize + tileSize / 2,
+          ),
+          ent.range * tileSize,
+          paintRSUrange,
+        );
         // Epsilon change visual marker
         if (ent.epsilonChanged) {
           final paintEps = Paint()
             ..color = Colors.purple
             ..style = PaintingStyle.stroke
             ..strokeWidth = 3.0;
-          canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), tileSize / 2 + 4.0, paintEps);
+          canvas.drawCircle(
+            Offset(
+              ent.position.x * tileSize + tileSize / 2,
+              ent.position.y * tileSize + tileSize / 2,
+            ),
+            tileSize / 2 + 4.0,
+            paintEps,
+          );
         }
-        // (Removed visualization for MDP txPower since txPower is no longer an MDP parameter)
       } else if (ent is Car) {
-
         bool collision = false;
         if (drawnPositions.contains((ent.position.x, ent.position.y))) {
           collision = true;
@@ -52,24 +85,40 @@ class ScenePainter extends CustomPainter {
 
         if (ent.stop == true) {
           canvas.drawCircle(
-            Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
+            Offset(
+              ent.position.x * tileSize + tileSize / 2,
+              ent.position.y * tileSize + tileSize / 2,
+            ),
             tileSize / 2,
-            paintStoppedCar);
+            paintStoppedCar,
+          );
         } else if (collision) {
           canvas.drawCircle(
-            Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
+            Offset(
+              ent.position.x * tileSize + tileSize / 2,
+              ent.position.y * tileSize + tileSize / 2,
+            ),
             tileSize / 2,
-            paintCollision);
+            paintCollision,
+          );
         } else if (ent.free == true) {
           canvas.drawCircle(
-            Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
+            Offset(
+              ent.position.x * tileSize + tileSize / 2,
+              ent.position.y * tileSize + tileSize / 2,
+            ),
             tileSize / 2,
-            paintFreeCar);
+            paintFreeCar,
+          );
         } else {
           canvas.drawCircle(
-            Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2),
+            Offset(
+              ent.position.x * tileSize + tileSize / 2,
+              ent.position.y * tileSize + tileSize / 2,
+            ),
             tileSize / 2,
-            paintCar);
+            paintCar,
+          );
         }
         // Epsilon change visual marker for cars
         if (ent.epsilonChanged) {
@@ -77,22 +126,36 @@ class ScenePainter extends CustomPainter {
             ..color = Colors.purple
             ..style = PaintingStyle.stroke
             ..strokeWidth = 3.0;
-          canvas.drawCircle(Offset(ent.position.x * tileSize + tileSize / 2, ent.position.y * tileSize + tileSize / 2), tileSize / 2 + 4.0, paintEps);
+          canvas.drawCircle(
+            Offset(
+              ent.position.x * tileSize + tileSize / 2,
+              ent.position.y * tileSize + tileSize / 2,
+            ),
+            tileSize / 2 + 4.0,
+            paintEps,
+          );
         }
-        // (Removed visualization for MDP txPower since txPower is no longer an MDP parameter)
       }
     }
     List<Signal> signals = medium.signals;
     for (final signal in signals) {
       final paintSignal = Paint()
-        ..color = signal.type == SignalType.rts ? Colors.green : (signal.type == SignalType.ack ? Colors.orange : Colors.purple)
+        ..color = signal.type == SignalType.rts
+            ? Colors.green
+            : (signal.type == SignalType.ack ? Colors.orange : Colors.purple)
         ..style = PaintingStyle.stroke
         ..strokeWidth = 2.0;
-        final double r = (signal.txRange > 0) ? signal.txRange.toDouble() : (signal.duration.toDouble());
-        canvas.drawCircle(
-          Offset(signal.x * tileSize + tileSize / 2, signal.y * tileSize + tileSize / 2),
-          r * tileSize,
-          paintSignal);
+      final double r = (signal.txRange > 0)
+          ? signal.txRange.toDouble()
+          : (signal.duration.toDouble());
+      canvas.drawCircle(
+        Offset(
+          signal.x * tileSize + tileSize / 2,
+          signal.y * tileSize + tileSize / 2,
+        ),
+        r * tileSize,
+        paintSignal,
+      );
     }
   }
 
@@ -102,6 +165,7 @@ class ScenePainter extends CustomPainter {
   }
 }
 
+/// Paints the static road grid background (only repaints when grid changes).
 class StaticScenePainter extends CustomPainter {
   List<List<int>> grid = [];
   final double tileSize;
@@ -111,7 +175,7 @@ class StaticScenePainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint()..color = Colors.grey.shade300;
-    // draw the static background once (example: grid)
+    // Draw road tiles as gray rectangles
     for (int y = 0; y < grid.length; y++) {
       for (int x = 0; x < grid[y].length; x++) {
         if (grid[y][x] == 0) continue;

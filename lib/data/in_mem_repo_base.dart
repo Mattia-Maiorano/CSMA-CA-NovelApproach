@@ -1,15 +1,23 @@
+/// ============================================================================
+/// In-Memory Repository Implementation
+/// ============================================================================
+/// Simple in-memory storage with broadcast stream for reactive updates.
+/// Used as the master repository for all simulation entities.
+/// ============================================================================
+
 import 'dart:async';
 
 import '../domain/repositories/base_repo.dart';
 
 class InMemRepoBase<T> implements BaseRepo<T> {
   final List<T> _items = [];
-  final StreamController<List<T>> _controller = StreamController<List<T>>.broadcast();
+  final StreamController<List<T>> _controller =
+      StreamController<List<T>>.broadcast();
 
   InMemRepoBase() {
     _controller.onListen = () {
       _controller.add(List.unmodifiable(_items));
-    }; 
+    };
     _controller.add(List.unmodifiable(_items));
   }
 

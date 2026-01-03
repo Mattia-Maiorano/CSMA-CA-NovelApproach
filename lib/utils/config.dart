@@ -1,110 +1,93 @@
-// GENERAL
-final int MAX_EPISODES = 1000;
-final int SUBFRAMES = 1000;
-final int FPS = 10;
-final int RANGE = 5;
-final int PROTOCOL = 0; // 0: ClassicProtocol 1: NovelProtocol
+/// ============================================================================
+/// Simulation Configuration Constants
+/// ============================================================================
+/// Central configuration file for all simulation parameters.
+/// Adjust these values to change simulation behavior.
+/// ============================================================================
 
-final int CARNUM = 10;
-final int RSUNUM = 4;
+// ignore_for_file: dangling_library_doc_comments, non_constant_identifier_names
 
-// MDP MODE
-final bool USE_MDP = true; // Set to false to use classic Car/RSU, true for MDP agents
+// ─────────────────────────────────────────────────────────────────────────────
+// General Simulation Parameters
+// ─────────────────────────────────────────────────────────────────────────────
+final int MAX_EPISODES = 1000; // Maximum frames before auto-stop
+final int SUBFRAMES = 1000; // Ticks per frame (fine-grained timing)
+final int FPS = 10; // Frames per second (visualization speed)
+final int RANGE = 5; // Default transmission range in tiles
+final int PROTOCOL = 0; // Protocol variant (0: Classic CSMA/CA)
 
-final int DIFS = 40;
-final int SIFS = 10;
-final int BROADCAST = 100;
-final int RESETTIME = 150; // this has to be > NAVTIME and > MAX BACKOFF TIME and > broadcast duration
+final int CARNUM = 10; // Default number of cars
+final int RSUNUM = 4; // Default number of RSUs
 
-final int STARTING_EXPONENT = 0;
-final int BACKOFF_SLOT_TIME = 10;
-final int MAX_BACKOFF_EXPONENT = 5;
+// ─────────────────────────────────────────────────────────────────────────────
+// MDP Mode Configuration
+// ─────────────────────────────────────────────────────────────────────────────
+final bool USE_MDP = true; // true: Use RL agents, false: Classic protocol
 
+// ─────────────────────────────────────────────────────────────────────────────
+// MAC Protocol Timing (in ticks)
+// ─────────────────────────────────────────────────────────────────────────────
+final int DIFS = 40; // Distributed Inter-Frame Space
+final int SIFS = 10; // Short Inter-Frame Space
+final int BROADCAST = 100; // Interval between RTS broadcasts
+final int RESETTIME = 150; // Timeout before reset (must be > NAVTIME)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Backoff Parameters
+// ─────────────────────────────────────────────────────────────────────────────
+final int STARTING_EXPONENT = 0; // Initial backoff exponent
+final int BACKOFF_SLOT_TIME = 10; // Duration of one backoff slot
+final int MAX_BACKOFF_EXPONENT = 5; // Maximum backoff exponent (2^5 = 32 slots)
+
+// ─────────────────────────────────────────────────────────────────────────────
+// Signal Durations (in ticks)
+// ─────────────────────────────────────────────────────────────────────────────
 final int RTSDURATION = 1;
 final int CTSDURATION = 5;
 final int QUERYDURATION = 7;
 final int RESPONSEDURATION = 7;
 final int ACKDURATION = 5;
 
-final int NAVTIME = RTSDURATION + CTSDURATION + QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 4;
-final int NAVTIMECTS = CTSDURATION + QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 3;
-final int NAVTIMEQUERY = QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 2;
+// ─────────────────────────────────────────────────────────────────────────────
+// NAV (Network Allocation Vector) Durations
+// ─────────────────────────────────────────────────────────────────────────────
+// These define how long entities should defer after hearing a signal
+final int NAVTIME =
+    RTSDURATION +
+    CTSDURATION +
+    QUERYDURATION +
+    RESPONSEDURATION +
+    ACKDURATION +
+    SIFS * 4;
+final int NAVTIMECTS =
+    CTSDURATION + QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 3;
+final int NAVTIMEQUERY =
+    QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 2;
 final int NAVTIMERESPONSE = RESPONSEDURATION + ACKDURATION + SIFS;
 final int NAVTIMEACK = ACKDURATION;
 
-final int PRUNECARS = SUBFRAMES;
+// ─────────────────────────────────────────────────────────────────────────────
+// Knowledge Pruning
+// ─────────────────────────────────────────────────────────────────────────────
+final int PRUNECARS = SUBFRAMES; // Age before forgetting a car's position
 
-// MDP Training
-final int TRAINING_INTERVAL = 1; // Number of completed steps (SUBFRAMES) before updating weights
+// ─────────────────────────────────────────────────────────────────────────────
+// MDP Training Parameters
+// ─────────────────────────────────────────────────────────────────────────────
+final int TRAINING_INTERVAL = 1; // Steps between weight updates
+final double GAMMA_FRAME = 0.99; // Frame-level discount factor
 
-// Gating for frame-based gamma: desired gamma across the whole frame
-final double GAMMA_FRAME = 0.99;
+// Epsilon Adaptation (exploration rate adjustment)
+final int EPSILON_WINDOW = 100; // Frames per comparison window
+final double EPSILON_INC = 0.5; // Increase amount upon degradation
+final double EPSILON_MAX = 1.0; // Maximum epsilon
+final double EPSILON_MIN = 0.0; // Minimum epsilon
+final int EPSILON_COOLDOWN_EPISODES = EPSILON_WINDOW * 2; // Cooldown period
+final double EPSILON_DECAY_FACTOR = 0.92; // Passive decay per episode
+final double EPSILON_BASELINE = 0.05; // Minimum epsilon floor
 
-// Epsilon adaptation via window average comparison
-// Epsilon is increased when avg of last EPSILON_WINDOW frames < avg of EPSILON_WINDOW frames before it
-final int EPSILON_WINDOW = 100; // number of frames per comparison window
-
-final double EPSILON_INC = 0.5; // amount to increase epsilon upon degradation
-final double EPSILON_MAX = 1.0; // max epsilon
-final double EPSILON_MIN = 0.0; // min epsilon
-// Epsilon cooldown and decay
-final int EPSILON_COOLDOWN_EPISODES = EPSILON_WINDOW * 2; // default cooldown in episodes
-final double EPSILON_DECAY_FACTOR = 0.92; // multiplicative passive decay per episode
-final double EPSILON_BASELINE = 0.05; // baseline epsilon not to drop below gradually
-
-// Toggle adaptive epsilon behaviour. Set to `false` to disable Analyzer-driven
-// epsilon decay/increase logic (useful for deterministic evaluation or
-// experiments where epsilon should be fixed externally).
-final bool ENABLE_EPSILON_ADAPT = false;
-
-// Separate toggle for passive epsilon decay (multiplicative per-episode).
-// When `false` passive decay is disabled but adaptive increases can still
-// be enabled via `ENABLE_EPSILON_ADAPT`.
-final bool ENABLE_EPSILON_DECAY = false;
-
-// Default epsilon value to use when (a) instantiating agents for experiments
-// or (b) overriding during deterministic runs.
-final double DEFAULT_EPSILON = 0.4;
-
-
-/*
-//////////////////
-/// FUNCTIONING PARAMETERS
-//////////////////
-
-// GENERAL
-final int SUBFRAMES = 400;
-final int FPS = 10;
-final int RANGE = 5;
-final int PROTOCOL = 0; // 0: ClassicProtocol 1: NovelProtocol
-
-final int CARNUM = 3;
-final int RSUNUM = 4;
-
-// MDP MODE
-final bool USE_MDP = false; // Set to false to use classic Car/RSU, true for MDP agents
-
-final int DIFS = 40;
-final int SIFS = 10;
-final int BROADCAST = 100;
-final int RESETTIME = 150; // this has to be > NAVTIME and > MAX BACKOFF TIME and > broadcast duration
-
-final int STARTING_EXPONENT = 0;
-final int BACKOFF_SLOT_TIME = 10;
-final int MAX_BACKOFF_EXPONENT = 5;
-
-final int RTSDURATION = 1;
-final int CTSDURATION = 5;
-final int QUERYDURATION = 7;
-final int RESPONSEDURATION = 7;
-final int ACKDURATION = 5;
-
-final int NAVTIME = RTSDURATION + CTSDURATION + QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 4;
-final int NAVTIMECTS = CTSDURATION + QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 3;
-final int NAVTIMEQUERY = QUERYDURATION + RESPONSEDURATION + ACKDURATION + SIFS * 2;
-final int NAVTIMERESPONSE = RESPONSEDURATION + ACKDURATION + SIFS;
-final int NAVTIMEACK = ACKDURATION;
-
-final int PRUNECARS = SUBFRAMES;
-
-*/
+// Toggle switches for adaptive behavior
+final bool ENABLE_EPSILON_ADAPT =
+    false; // Enable gradient-based epsilon adjustment
+final bool ENABLE_EPSILON_DECAY = false; // Enable passive epsilon decay
+final double DEFAULT_EPSILON = 0.4;         // Default starting epsilon

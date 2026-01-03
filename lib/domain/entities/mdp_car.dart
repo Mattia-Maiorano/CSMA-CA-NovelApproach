@@ -1,3 +1,19 @@
+/// ============================================================================
+/// MDP Car Entity - Reinforcement Learning Vehicle
+/// ============================================================================
+/// Extends the classic Car with Q-Learning based decision making.
+///
+/// Decision Points:
+/// - When idle and medium is free: choose 'startComm' or 'defer'
+/// - Agent learns from outcomes: successful communication, collisions, timeouts
+///
+/// Reward Structure:
+/// - Success (free/stop response): +3.0
+/// - Soft reset (collision): -1.0 * congestion_factor
+/// - Hard reset: -2.0 * congestion_factor
+/// - Deferral: -0.1 (small cost for waiting)
+/// ============================================================================
+
 import 'dart:math';
 
 import 'package:daemon/domain/entities/classic_car.dart';
@@ -11,9 +27,9 @@ class MDPCar extends Car {
   final Agent agent;
 
   // Decision tracking
-  Map<String, dynamic>? _decisionState;  // State when decision was made
-  String? _pendingAction;                 // Action waiting for outcome
-  bool _waitingOutcome = false;           // Whether we're waiting for an outcome
+  Map<String, dynamic>? _decisionState; // State when decision was made
+  String? _pendingAction; // Action waiting for outcome
+  bool _waitingOutcome = false; // Whether we're waiting for an outcome
 
   MDPCar({
     required super.id,
@@ -94,7 +110,7 @@ class MDPCar extends Car {
 
       // Apply the action
       if (_pendingAction == 'startComm') {
-        broadcastTimer = 0;  // Trigger query
+        broadcastTimer = 0; // Trigger query
       } else if (_pendingAction == 'defer') {
         backoffSlots = Random().nextInt(3) + 1;
       }
@@ -113,8 +129,20 @@ class MDPCar extends Car {
       final nextState = _state();
       final done = (free || stop) || tick == SUBFRAMES - 1;
 
-      agent.learn(_decisionState!, _pendingAction!, reward, nextState, done: done);
-      analyzer?.recordMDPProgress(id, 'Car', reward, nextState, agent.parameters());
+      agent.learn(
+        _decisionState!,
+        _pendingAction!,
+        reward,
+        nextState,
+        done: done,
+      );
+      analyzer?.recordMDPProgress(
+        id,
+        'Car',
+        reward,
+        nextState,
+        agent.parameters(),
+      );
 
       // Reset decision tracking
       _decisionState = null;
@@ -126,9 +154,21 @@ class MDPCar extends Car {
     if (tick == SUBFRAMES - 1) {
       // If still waiting for outcome at frame end, learn with penalty
       if (_waitingOutcome && _decisionState != null && _pendingAction != null) {
-        final penalty = (free || stop) ? 1.0 : -3.0;  // Unfinished action
-        agent.learn(_decisionState!, _pendingAction!, penalty, _state(), done: true);
-        analyzer?.recordMDPProgress(id, 'Car', penalty, _state(), agent.parameters());
+        final penalty = (free || stop) ? 1.0 : -3.0; // Unfinished action
+        agent.learn(
+          _decisionState!,
+          _pendingAction!,
+          penalty,
+          _state(),
+          done: true,
+        );
+        analyzer?.recordMDPProgress(
+          id,
+          'Car',
+          penalty,
+          _state(),
+          agent.parameters(),
+        );
       }
 
       prevKnownCars = seenCarIds.length;

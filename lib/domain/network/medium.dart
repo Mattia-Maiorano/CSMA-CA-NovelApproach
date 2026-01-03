@@ -1,3 +1,17 @@
+/// ============================================================================
+/// Medium - Shared Wireless Channel Simulation
+/// ============================================================================
+/// Simulates the shared wireless medium for V2X communication.
+///
+/// Features:
+/// - Transmit: Queue signals for broadcast
+/// - Sense: Check for signals within range (returns collision if multiple)
+/// - Step: Advance signal durations and add queued signals
+///
+/// Collision Detection:
+/// - If a receiver senses multiple overlapping signals, returns a "broken" signal
+/// ============================================================================
+
 import 'signal.dart';
 
 class Medium {
@@ -17,7 +31,13 @@ class Medium {
         if (toReturn == null) {
           toReturn = signal;
         } else {
-          return Signal(ownerId: -1, destinationId: -2, x: -1, y: -1, type: SignalType.broken);
+          return Signal(
+            ownerId: -1,
+            destinationId: -2,
+            x: -1,
+            y: -1,
+            type: SignalType.broken,
+          );
         }
       }
     }

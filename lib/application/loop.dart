@@ -1,5 +1,16 @@
+/// ============================================================================
+/// Simulation Loop Controller
+/// ============================================================================
+/// Manages the main simulation loop that orchestrates:
+/// - Car and RSU entity updates each tick
+/// - Signal transmission/reception via the shared medium
+/// - Metrics collection through the Analyzer
+///
+/// Each "frame" consists of multiple sub-ticks (SUBFRAMES) to simulate
+/// fine-grained timing of the MAC protocol.
+/// ============================================================================
+
 import 'dart:async';
-// image storage logic removed
 
 import 'package:daemon/domain/entities/classic_car.dart';
 import 'package:daemon/domain/entities/entity.dart';
@@ -29,24 +40,29 @@ class Loop {
   Future<void>? _loopFuture;
   Completer<void>? _completer;
 
-  Loop({required this.medium, required this.analyzer, required BaseRepo<Car> carRepo, required BaseRepo<RSU> rsuRepo, required BaseRepo<Entity> entRepo, required int fps})
-      : _carRepo = carRepo,
-        _rsuRepo = rsuRepo,
-        frameDuration = Duration(milliseconds: (1000 / fps).round());
+  Loop({
+    required this.medium,
+    required this.analyzer,
+    required BaseRepo<Car> carRepo,
+    required BaseRepo<RSU> rsuRepo,
+    required BaseRepo<Entity> entRepo,
+    required int fps,
+  }) : _carRepo = carRepo,
+       _rsuRepo = rsuRepo,
+       frameDuration = Duration(milliseconds: (1000 / fps).round());
   Future<void> start(bool MDP) {
-
     print("Starting loop...");
 
     if (_running) {
       return _loopFuture!;
     }
     _running = true;
-    
+
     // Enable MDP progress tracking if in MDP mode
     if (MDP) {
       analyzer?.enableMDPTracking();
     }
-    
+
     _completer = Completer<void>();
     _loopFuture = loop(MDP).whenComplete(() {
       _running = false;
@@ -61,18 +77,24 @@ class Loop {
     final carsReady = Completer<void>();
     final rsusReady = Completer<void>();
 
-    carsSub = _carRepo.watchItems().listen((carsList) {
-      cars = carsList;
-      if (!carsReady.isCompleted) carsReady.complete();
-    }, onError: (e) {
-      // swallow errors from the repo stream to avoid unhandled exceptions
-    });
-    rsusSub = _rsuRepo.watchItems().listen((rsusList) {
-      rsus = rsusList;
-      if (!rsusReady.isCompleted) rsusReady.complete();
-    }, onError: (e) {
-      // swallow errors from the repo stream to avoid unhandled exceptions
-    });
+    carsSub = _carRepo.watchItems().listen(
+      (carsList) {
+        cars = carsList;
+        if (!carsReady.isCompleted) carsReady.complete();
+      },
+      onError: (e) {
+        // swallow errors from the repo stream to avoid unhandled exceptions
+      },
+    );
+    rsusSub = _rsuRepo.watchItems().listen(
+      (rsusList) {
+        rsus = rsusList;
+        if (!rsusReady.isCompleted) rsusReady.complete();
+      },
+      onError: (e) {
+        // swallow errors from the repo stream to avoid unhandled exceptions
+      },
+    );
 
     final currentCars = _carRepo.items;
     if (currentCars.isNotEmpty) {
@@ -92,9 +114,10 @@ class Loop {
     try {
       int run = 0;
       while (_running) {
-        
         if (run >= MAX_EPISODES) {
-          print("Reached maximum number of episodes ($MAX_EPISODES). Stopping loop.");
+          print(
+            "Reached maximum number of episodes ($MAX_EPISODES). Stopping loop.",
+          );
           stop();
           break;
         }
@@ -115,7 +138,6 @@ class Loop {
           freeToMoveCars.clear();
           // End of frame: record and reset per-frame throughput counters
           analyzer?.completeThroughputFrame();
-          
         } catch (e) {
           print('Error during loop tick: $e');
         }
@@ -151,7 +173,6 @@ class Loop {
   }
 
   Future<void> tick(int tick, int frame) async {
-
     // Work on a mutable snapshot to avoid modifying an unmodifiable list
     final snapshot = List<Car>.from(cars);
     List<Car> updatedCars = [];
@@ -165,38 +186,36 @@ class Loop {
 
         Car forCar = snapshot[i];
         Signal? signalToRead = medium.sense(
-            forCar.position.x,
-            forCar.position.y,
-            forCar.sensingRange,
-            forCar.id);
+          forCar.position.x,
+          forCar.position.y,
+          forCar.sensingRange,
+          forCar.id,
+        );
         if (signalToRead != null) {
           analyzer?.incrementBusyMedium();
-
-          if (signalToRead.destinationId == forCar.id) {
-            // print('$tick-${forCar.id}-${forCar.state})\t🚗\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${forCar.nav}/${forCar.ifsTimer}/${forCar.backoffSlots} || ${forCar.timeout}/${forCar.consecutiveCollisions})');
-          } else {
-            // print('$tick-${forCar.id}-${forCar.state})\t🚗\t👁️\tMISS\t: visible signal ${signalToRead.type}/${signalToRead.data} from ${signalToRead.ownerId} to ${signalToRead.destinationId}');
-          }
         }
 
         final stepProd = snapshot[i].step(tick, frame, signalToRead);
         final Signal? signal = stepProd.$1;
         final Measurement measurement = stepProd.$2;
 
-        if (measurement.answered && !processedCars.contains(forCar.id)) processedCars.add(forCar.id);
-        if (measurement.free && !freeToMoveCars.contains(forCar.id)) freeToMoveCars.add(forCar.id);
+        if (measurement.answered && !processedCars.contains(forCar.id))
+          processedCars.add(forCar.id);
+        if (measurement.free && !freeToMoveCars.contains(forCar.id))
+          freeToMoveCars.add(forCar.id);
         analyzer?.update(measurement);
         updatedCars.add(snapshot[i]);
-        
+
         if (signal != null) {
-          print('$tick-${forCar.id}-${forCar.state})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
+          print(
+            '$tick-${forCar.id}-${forCar.state})\t🚗\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}',
+          );
           medium.transmit(signal);
           if (signal.type == SignalType.rts)
             analyzer?.incrementRts();
-          else if (signal.type == SignalType.ack) analyzer?.incrementAcks();
+          else if (signal.type == SignalType.ack)
+            analyzer?.incrementAcks();
         }
-
-
       }
     } catch (_) {
       rethrow;
@@ -207,22 +226,16 @@ class Loop {
     ///////////////
     try {
       for (final rsu in rsus) {
-
         analyzer?.incrementTotalPerNode();
 
         Signal? signalToRead = medium.sense(
-            rsu.position.x,
-            rsu.position.y,
-            rsu.sensingRange,
-            rsu.id);
+          rsu.position.x,
+          rsu.position.y,
+          rsu.sensingRange,
+          rsu.id,
+        );
         if (signalToRead != null) {
           analyzer?.incrementBusyMedium();
-
-          if (signalToRead.destinationId == rsu.id || signalToRead.destinationId == -1) {
-            // print('$tick-${rsu.id}-${rsu.state})\t🚦\t👁️\t\t:\t${signalToRead.type}/${signalToRead.data}\t(${rsu.nav}/${rsu.ifsTimer}/${rsu.backoffSlots} || ${rsu.timeout}/${rsu.consecutiveCollisions})');
-          } else {
-            // print('$tick-${rsu.id}-${rsu.state})\t🚦\t👁️\tMISS\t: visible signal ${signalToRead.type}/${signalToRead.data} from ${signalToRead.ownerId} to ${signalToRead.destinationId}');
-          }
         }
 
         final stepProd = rsu.step(tick, frame, signalToRead);
@@ -231,11 +244,14 @@ class Loop {
         analyzer?.update(measurement);
 
         if (signal != null) {
-          print('$tick-${rsu.id}-${rsu.state})\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}');
+          print(
+            '$tick-${rsu.id}-${rsu.state})\t🚦\t\t✍🏼\t:\t${signal.type}/${signal.data} to ${signal.destinationId}',
+          );
           medium.transmit(signal);
           if (signal.type == SignalType.rts)
             analyzer?.incrementRts();
-          else if (signal.type == SignalType.ack) analyzer?.incrementAcks();
+          else if (signal.type == SignalType.ack)
+            analyzer?.incrementAcks();
         }
       }
     } catch (_) {
@@ -254,12 +270,5 @@ class Loop {
     medium.step();
 
     analyzer?.incrementTotal();
-
-  /*
-    if (tick % 100 == 0) {
-      medium.getSignalsInfo();
-    }
-  */
-
   }
 }
