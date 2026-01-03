@@ -1,4 +1,4 @@
-# 🚗 Daemon - V2X Roadside Assistance Simulation
+Roadside Assistance Simulation
 
 A Flutter-based simulation of **Vehicle-to-Everything (V2X) communication** between cars and Roadside Units (RSUs), implementing a CSMA/CA-like MAC protocol with optional **Reinforcement Learning** agents.
 
