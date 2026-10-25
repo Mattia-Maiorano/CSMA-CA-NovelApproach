@@ -49,7 +49,3 @@ void main() {
     expect(steps.isNotEmpty, true);
   });
 }
-    final after = analyzer.getRegisteredMdpAgent(0)?.getEpsilon() ?? 0.0;
-    expect(after <= before, true);
-  });
-}

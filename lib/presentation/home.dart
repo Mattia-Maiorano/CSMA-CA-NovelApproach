@@ -524,105 +524,110 @@ class _MyHomePageState extends State<MyHomePage> {
             margin: const EdgeInsets.all(40),
             child: Padding(
               padding: const EdgeInsets.all(40.0),
-              child: Column(
-                mainAxisSize: MainAxisSize.min,
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  const Text(
-                    'Simulation Configuration',
-                    style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 30),
-
-                  // Use MDP toggle
-                  Row(
-                    children: [
-                      const Text(
-                        'Use MDP Agents',
-                        style: TextStyle(fontSize: 16),
+              child: SingleChildScrollView(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Simulation Configuration',
+                      style: TextStyle(
+                        fontSize: 24,
+                        fontWeight: FontWeight.bold,
                       ),
-                      const SizedBox(width: 8),
-                      Switch(
-                        value: _useMDP,
-                        onChanged: (v) => setState(() => _useMDP = v),
-                      ),
-                    ],
-                  ),
-
-                  // Car Number Slider
-                  Text(
-                    'Number of Cars: $_carNum',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-
-                  const SizedBox(height: 20),
-                  Slider(
-                    value: _carNum.toDouble(),
-                    min: 1,
-                    max: 20,
-                    divisions: 19,
-                    label: _carNum.toString(),
-                    onChanged: (value) {
-                      setState(() {
-                        _carNum = value.toInt();
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 20),
-
-                  // RSU Number Slider
-                  Text(
-                    'Number of RSUs: $_rsuNum',
-                    style: const TextStyle(fontSize: 16),
-                  ),
-                  Slider(
-                    value: _rsuNum.toDouble(),
-                    min: 1,
-                    max: 4,
-                    divisions: 3,
-                    label: _rsuNum.toString(),
-                    onChanged: (value) {
-                      setState(() {
-                        _rsuNum = value.toInt();
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 20),
-
-                  // FPS Slider
-                  Text('FPS: $_fps', style: const TextStyle(fontSize: 16)),
-                  Slider(
-                    value: _fps.toDouble(),
-                    min: 1,
-                    max: 10,
-                    divisions: 9,
-                    label: _fps.toString(),
-                    onChanged: (value) {
-                      setState(() {
-                        _fps = value.toInt();
-                      });
-                    },
-                  ),
-                  const SizedBox(height: 40), // Start Button
-                  Center(
-                    child: ElevatedButton(
-                      onPressed: _applyConfigAndStart,
-                      style: ElevatedButton.styleFrom(
-                        backgroundColor: Colors.green,
-                        foregroundColor: Colors.white,
-                        padding: const EdgeInsets.symmetric(
-                          horizontal: 50,
-                          vertical: 20,
-                        ),
-                        textStyle: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      child: const Text('START SIMULATION'),
                     ),
-                  ),
-                ],
+                    const SizedBox(height: 30),
+
+                    // Use MDP toggle
+                    Row(
+                      children: [
+                        const Text(
+                          'Use MDP Agents',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                        const SizedBox(width: 8),
+                        Switch(
+                          value: _useMDP,
+                          onChanged: (v) => setState(() => _useMDP = v),
+                        ),
+                      ],
+                    ),
+
+                    // Car Number Slider
+                    Text(
+                      'Number of Cars: $_carNum',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+
+                    const SizedBox(height: 20),
+                    Slider(
+                      value: _carNum.toDouble(),
+                      min: 1,
+                      max: 20,
+                      divisions: 19,
+                      label: _carNum.toString(),
+                      onChanged: (value) {
+                        setState(() {
+                          _carNum = value.toInt();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
+                    // RSU Number Slider
+                    Text(
+                      'Number of RSUs: $_rsuNum',
+                      style: const TextStyle(fontSize: 16),
+                    ),
+                    Slider(
+                      value: _rsuNum.toDouble(),
+                      min: 1,
+                      max: 4,
+                      divisions: 3,
+                      label: _rsuNum.toString(),
+                      onChanged: (value) {
+                        setState(() {
+                          _rsuNum = value.toInt();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 20),
+
+                    // FPS Slider
+                    Text('FPS: $_fps', style: const TextStyle(fontSize: 16)),
+                    Slider(
+                      value: _fps.toDouble(),
+                      min: 1,
+                      max: 10,
+                      divisions: 9,
+                      label: _fps.toString(),
+                      onChanged: (value) {
+                        setState(() {
+                          _fps = value.toInt();
+                        });
+                      },
+                    ),
+                    const SizedBox(height: 40), // Start Button
+                    Center(
+                      child: ElevatedButton(
+                        onPressed: _applyConfigAndStart,
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: Colors.green,
+                          foregroundColor: Colors.white,
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 50,
+                            vertical: 20,
+                          ),
+                          textStyle: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        child: const Text('START SIMULATION'),
+                      ),
+                    ),
+                  ],
+                ),
               ),
             ),
           ),

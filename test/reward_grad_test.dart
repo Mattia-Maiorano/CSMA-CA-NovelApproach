@@ -5,6 +5,7 @@ import 'package:daemon/utils/config.dart';
 
 void main() {
   test('Analyzer triggers epsilon increase when recent window avg < previous window avg', () {
+    ENABLE_EPSILON_ADAPT = true;
     final analyzer = Analyzer();
     analyzer.enableMDPTracking();
     final agent = QAgent(0, ['noop', 'startQuery']);
@@ -16,24 +17,26 @@ void main() {
     final rewards = <double>[];
     // First window: high rewards
     for (int i = 0; i < w; i++) rewards.add(10.0);
-    // Second window: low rewards (should trigger)
-    for (int i = 0; i < w; i++) rewards.add(2.0);
-    // Third window: even lower (should trigger again after cooldown)
+    // Second window: very low rewards (should trigger)
     for (int i = 0; i < w; i++) rewards.add(1.0);
+    // Third window: even lower (should trigger again after cooldown)
+    for (int i = 0; i < w; i++) rewards.add(-1.0);
 
     bool seenIncrease = false;
     double prevEps = agent.getEpsilon();
     for (final r in rewards) {
-      analyzer.recordMDPProgress(0, 'Car', r, {}, {'alpha': 0.1});
+      analyzer.recordMDPProgress(0, 'Car', r, {}, {'alpha': 0.1, 'epsilon': agent.getEpsilon()});
       final curr = agent.getEpsilon();
       if (curr > prevEps) seenIncrease = true;
       prevEps = curr;
     }
 
+    // Check that we saw it happen
     expect(seenIncrease, true);
   });
 
   test('Analyzer respects cooldown after epsilon increase', () {
+    ENABLE_EPSILON_ADAPT = true;
     final analyzer = Analyzer();
     analyzer.enableMDPTracking();
     final agent = QAgent(0, ['noop', 'startQuery']);
